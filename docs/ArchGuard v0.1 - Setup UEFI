@@ -1,0 +1,114 @@
+# ArchGuard v0.1
+
+## Goal
+
+ArchGuard v0.1 is a **bootable USB bootstrap environment** whose first purpose is to establish the ArchGuard Secure Boot trust chain on a new machine.
+
+The USB should boot normally when the ArchGuard Secure Boot keys are already enrolled in the UEFI firmware.
+
+If the ArchGuard keys are **not** enrolled, the user must first manually place the UEFI firmware into **Secure Boot Setup Mode** and boot the ArchGuard USB.
+
+The ArchGuard bootstrap environment will then:
+
+1. Detect that the system was booted using UEFI.
+2. Detect that the firmware is in Secure Boot Setup Mode.
+3. Enroll the ArchGuard Secure Boot keys:
+
+   * Platform Key (PK)
+   * Key Exchange Key (KEK)
+   * Signature Database (db)
+4. Verify that the keys were successfully enrolled.
+5. Inform the user that the firmware configuration must now be finalized.
+6. Reboot the machine back into the UEFI firmware setup.
+
+The user can then configure and lock down the UEFI as desired.
+
+### Important: TPM
+
+The firmware and Secure Boot configuration should be considered **finalized before TPM-bound secrets are enrolled**.
+
+Changes to the firmware and Secure Boot configuration can change TPM PCR measurements. ArchGuard therefore establishes the Secure Boot trust chain **before the actual operating-system installation and TPM enrollment take place**.
+
+The user should therefore use this reboot to configure the firmware appropriately, for example:
+
+* Set a UEFI administrator password.
+* Disable booting from USB/external media if desired.
+* Configure the boot order.
+* Enable and lock down Secure Boot.
+* Keep any other firmware security settings appropriate for the intended system.
+
+After the firmware configuration is finalized, the user can boot the ArchGuard USB again.
+
+## Scope of v0.1
+
+v0.1 is intentionally limited to the **Secure Boot bootstrap stage**.
+
+It does **not yet**:
+
+* Partition disks.
+* Install Arch Linux.
+* Create or configure LUKS.
+* Enroll TPM-bound secrets.
+* Generate the final machine configuration.
+* Install the final ArchGuard UKI.
+* Configure the complete ArchGuard security baseline.
+
+Those components will be built on top of this initial trust-establishment stage.
+
+## Intended Flow
+
+```text
+New machine
+    │
+    ▼
+UEFI firmware
+    │
+    ├── ArchGuard keys already enrolled
+    │       │
+    │       ▼
+    │    ArchGuard USB boots
+    │
+    └── ArchGuard keys not enrolled
+            │
+            ▼
+        Enter UEFI
+            │
+            ▼
+        Enable Setup Mode
+            │
+            ▼
+        Boot ArchGuard USB
+            │
+            ▼
+    ArchGuard Secure Boot bootstrap
+            │
+            ├── Detect UEFI
+            ├── Detect Setup Mode
+            ├── Enroll PK
+            ├── Enroll KEK
+            ├── Enroll db
+            └── Verify enrollment
+                    │
+                    ▼
+              Reboot to UEFI
+                    │
+                    ▼
+          User finalizes firmware
+                    │
+                    ├── Secure Boot
+                    ├── UEFI password
+                    ├── USB boot policy
+                    └── Other desired settings
+                    │
+                    ▼
+              Boot ArchGuard USB
+                    │
+                    ▼
+          Future installation stages
+```
+
+## Design Principle
+
+**Establish the firmware trust chain first. Install and bind the operating system to it afterwards.**
+
+The v0.1 USB is therefore not yet an Arch installer. It is the first step in establishing the trusted boot environment on which the later ArchGuard installation will depend.
