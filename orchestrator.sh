@@ -46,6 +46,7 @@ main(){
 #     prepare_agkeys
 #     create_usb
 #     verify_usb
+    cleanup
     msg "worked"
 }
 
