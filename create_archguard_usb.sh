@@ -123,6 +123,7 @@ handoff(){
 # ==============================================================================
 
 main(){
+    check_sudo
     init_variables
     check_internet
     project_remove
