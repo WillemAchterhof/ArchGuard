@@ -118,7 +118,7 @@ handoff(){
 
     msg "Starting ArchGuard USB Builder..."
 
-    export "$DIR_PROJECT"
+    export DIR_PROJECT
     exec "$orchestrator"
 }
 
