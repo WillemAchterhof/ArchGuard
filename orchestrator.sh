@@ -46,7 +46,7 @@ main(){
 #     prepare_agkeys
 #     create_usb
 #     verify_usb
-    printf "worked"
+    msg "worked"
 }
 
 main "$@"
