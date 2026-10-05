@@ -29,7 +29,7 @@ check_sudo(){
 
 init_variables(){
     readonly GIT_URL="https://github.com/WillemAchterhof/archguard-usb-builder.git"
-    readonly GIT_BRANCH="0.1"
+    readonly GIT_BRANCH="v0.1"
 
     readonly DIR_BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     readonly DIR_PROJECT="$DIR_BASE/archguard-usb-builder"
