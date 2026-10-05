@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+# ==============================================================================
+# ArchGuard USB Builder - Common
+# ==============================================================================
+# /lib/common.sh
+
+PACKAGES_ADDED=()
+
+require_command(){
+    command -v "$1" >/dev/null 2>&1 \
+        || fatal "Required command not found: $1"
+}
+
+packages_install(){
+
+    for package in "$@"; do
+        if ! pacman -Q "$package" >/dev/null 2>&1; then
+            PACKAGES_ADDED+=("$package")
+        fi
+    done
+    
+    sudo pacman -S --noconfirm "$@"
+}
+
+cleanup(){
+    msg "Cleaning up..."
+
+    if (( ${#PACKAGES_ADDED[@]} > 0 )); then
+        sudo pacman -Rns --noconfirm \
+            "${PACKAGES_ADDED[@]}" \
+            2>/dev/null || true
+    fi
+
+    if [[ -d "${DIR_PROJECT:-}" ]]; then
+        rm -rf -- "$DIR_PROJECT" || true
+    fi
+}
