@@ -24,7 +24,7 @@ packages_install(){
 }
 
 cleanup(){
-    msg "$DIR_PROJECT"
+
     msg "Cleaning up..."
 
     if (( ${#PACKAGES_ADDED[@]} > 0 )); then

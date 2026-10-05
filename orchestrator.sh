@@ -47,7 +47,6 @@ main(){
 #     create_usb
 #     verify_usb
     cleanup
-    msg "worked"
 }
 
 main "$@"
