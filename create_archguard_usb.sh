@@ -71,6 +71,16 @@ check_internet(){
 # Project
 # ==============================================================================
 
+project_copy(){
+    local file="$DIR_PROJECT/create_archguard_usb.sh"
+
+    [[ -f "$file" ]] \
+        || fatal "USB creator script not found: $file"
+
+    install -m 0755 "$file" "$DIR_BASE/create_archguard_usb.sh" \
+        || fatal "Failed to copy USB creator script."
+}
+
 project_remove(){
     if [[ -d "$DIR_PROJECT" ]]; then
         msg "Removing previous USB Builder project..."
@@ -89,6 +99,8 @@ project_clone(){
         "$GIT_URL" \
         "$DIR_PROJECT" \
         || fatal "Failed to clone USB Builder project."
+
+    project_copy
 }
 
 # ==============================================================================
