@@ -27,12 +27,16 @@ cleanup(){
     msg "Cleaning up..."
 
     if (( ${#PACKAGES_ADDED[@]} > 0 )); then
+        msg "Removing packages: ${PACKAGES_ADDED[*]}"
+
         sudo pacman -Rns --noconfirm \
             "${PACKAGES_ADDED[@]}" \
             2>/dev/null || true
     fi
 
     if [[ -d "${DIR_PROJECT:-}" ]]; then
+        msg "Removing project: $DIR_PROJECT"
+
         rm -rf -- "$DIR_PROJECT" || true
     fi
 }
