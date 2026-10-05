@@ -4,16 +4,7 @@ set -Eeuo pipefail
 # ==============================================================================
 #  ArchGuard USB Builder Bootstrap
 # ==============================================================================
-#  Minimal bootstrap entry point for ArchGuard USB Builder.
-#
-#  Responsibility:
-#    1. Verify root access.
-#    2. Verify Internet connectivity.
-#    3. Download the latest ArchGuard USB Builder project.
-#    4. Hand control to the project orchestrator.
-#
-#  All USB creation logic lives inside the downloaded project.
-# ==============================================================================
+# /create_archguard_usb.sh
 
 # ==============================================================================
 # Initialization
