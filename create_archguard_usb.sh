@@ -5,7 +5,6 @@ set -Eeuo pipefail
 #  ArchGuard USB Builder Bootstrap
 # ==============================================================================
 # /create_archguard_usb.sh
-# TEST
 
 # ==============================================================================
 # Initialization
