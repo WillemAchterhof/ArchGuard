@@ -27,6 +27,8 @@ display_disk_menu(){
     local size
     local model
 
+    clear
+    
     printf '\n'
     printf '%s\n' '================================================'
     printf '%s\n' ' ArchGuard USB Builder - Disk Selection'
