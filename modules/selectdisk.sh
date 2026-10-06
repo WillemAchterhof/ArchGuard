@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 
 # ==============================================================================
@@ -16,12 +15,13 @@ find_usb_disks(){
         awk '$2 == "usb" && $3 == "disk" { print $1 }'
 }
 
+
 # ==============================================================================
 # Menu Display
 # ==============================================================================
 
 display_disk_menu(){
-    local -n disks=$1
+    local disks=("$@")
     local index
     local disk
     local size
@@ -59,13 +59,14 @@ display_disk_menu(){
     printf '\n'
 }
 
+
 # ==============================================================================
 # User Input
 # ==============================================================================
 
 read_disk_choice(){
-    local -n disks=$1
-    local -n choice=$2
+    local count="$1"
+    local choice
 
     read -r -p 'Selection: ' choice || return 1
 
@@ -80,13 +81,14 @@ read_disk_choice(){
     esac
 
     if [[ ! "$choice" =~ ^[0-9]+$ ]] ||
-       (( choice < 1 || choice > ${#disks[@]} )); then
+       (( choice < 1 || choice > count )); then
         warn "Invalid selection."
         return 2
     fi
 
-    return 0
+    printf '%s\n' "$choice"
 }
+
 
 # ==============================================================================
 # Selection Validation
@@ -110,6 +112,7 @@ validate_disk_choice(){
     return 0
 }
 
+
 # ==============================================================================
 # Selection Commit
 # ==============================================================================
@@ -121,6 +124,7 @@ select_disk(){
 
     success "Selected USB disk: $AG_USB_DISK"
 }
+
 
 # ==============================================================================
 # Module Entry Point
@@ -138,19 +142,22 @@ run_selectdisk(){
     while true; do
         mapfile -t disks < <(find_usb_disks)
 
-        display_disk_menu disks
+        display_disk_menu "${disks[@]}"
 
-        read_disk_choice disks choice
-        result=$?
+        if choice=$(read_disk_choice "${#disks[@]}"); then
+            :
+        else
+            result=$?
 
-        case "$result" in
-            1)
-                return 1
-                ;;
-            2)
-                continue
-                ;;
-        esac
+            case "$result" in
+                1)
+                    return 1
+                    ;;
+                2)
+                    continue
+                    ;;
+            esac
+        fi
 
         disk="${disks[$((choice - 1))]}"
 
