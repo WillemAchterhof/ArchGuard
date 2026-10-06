@@ -39,13 +39,15 @@ source "$DIR_MAIN/modules/selectdisk.sh"
 # ==============================================================================
 
 main(){
-    select_disk || fatal "USB disk selection cancelled or failed."
-#     build_iso
-#     fetch_installer
-#     prepare_agboot
-#     prepare_agkeys
-#     create_usb
-#     verify_usb
+    run_selectdisk || fatal "USB disk selection failed."
+
+    # build_iso
+    # fetch_installer
+    # prepare_agboot
+    # prepare_agkeys
+    # create_usb
+    # verify_usb
+
     cleanup
 }
 
