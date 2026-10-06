@@ -38,6 +38,6 @@ cleanup(){
     if [[ -d "${DIR_PROJECT:-}" ]]; then
         msg "Removing project: $DIR_PROJECT"
 
-        rm -rf -- "$DIR_PROJECT" || true
+        sudo rm -rf -- "$DIR_PROJECT" || true
     fi
 }
