@@ -38,7 +38,7 @@ fatal(){
     printf "[FATAL] %s\n" "$1"
 
     if [[ -d "${DIR_PROJECT:-}" ]]; then
-        rm -rf -- "$DIR_PROJECT" || true
+        sudo rm -rf -- "$DIR_PROJECT" || true
     fi
 
     exit 1
