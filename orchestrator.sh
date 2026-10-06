@@ -39,6 +39,7 @@ source "$DIR_MAIN/modules/create-iso.sh"
 # ==============================================================================
 
 main(){
+    start_sudo_keepalive
     run_selectdisk || fatal "USB disk selection cancled or failed."
     run_build_iso
     # fetch_installer
