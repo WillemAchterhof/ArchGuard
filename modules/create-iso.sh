@@ -265,7 +265,7 @@ verify_iso_esp(){
     local path
     local check="$ISO_SIGN/check.efi"
 
-    for path in "$ISO_PATH_KERNEL" "$ISO_PATH_LOADER"; do
+    for path in "$ISO_PATH_KERNEL" "$ISO_PATH_LOADER" "$ISO_PATH_SHELL"; do
         rm -f -- "$check"
 
         mcopy -n -i "$ISO_SIGN_ESP" "::$path" "$check" \
@@ -310,10 +310,10 @@ verify_iso(){
 
     osirrox \
         -indev "$AG_ISO_FILE" \
-        -cpx "$ISO_PATH_KERNEL" "$ISO_PATH_LOADER" "$check/" \
+        -cpx "$ISO_PATH_KERNEL" "$ISO_PATH_LOADER" "$ISO_PATH_SHELL" "$check/" \
         || fatal "Failed to read files back from signed ISO."
 
-    for path in vmlinuz-linux BOOTx64.EFI; do
+    for path in vmlinuz-linux BOOTx64.EFI shellx64.efi; do
         sbverify --cert "$ISO_SB_CERT_LOCAL" "$check/$path" >/dev/null \
             || fatal "Not signed inside ISO: $path"
     done
