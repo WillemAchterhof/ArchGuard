@@ -26,8 +26,8 @@ trap 'trap_err' ERR
 # Modules
 # ==============================================================================
 
-source "$DIR_MAIN/modules/selectdisk.sh"
-# source "$DIR_MAIN/modules/iso/run.sh"
+source "$DIR_MAIN/modules/select-disk.sh"
+source "$DIR_MAIN/modules/create-iso.sh"
 # source "$DIR_MAIN/modules/installer/run.sh"
 # source "$DIR_MAIN/modules/agboot/run.sh"
 # source "$DIR_MAIN/modules/agkeys/run.sh"
@@ -39,9 +39,8 @@ source "$DIR_MAIN/modules/selectdisk.sh"
 # ==============================================================================
 
 main(){
-    run_selectdisk || fatal "USB disk selection failed."
-
-    # build_iso
+    run_selectdisk || fatal "USB disk selection cancled or failed."
+    build_iso
     # fetch_installer
     # prepare_agboot
     # prepare_agkeys
