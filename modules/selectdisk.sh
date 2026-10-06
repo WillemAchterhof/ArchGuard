@@ -126,6 +126,7 @@ select_disk(){
 # Module Entry Point
 # ==============================================================================
 
+
 run_selectdisk(){
     local -a disks=()
     local choice
@@ -140,17 +141,20 @@ run_selectdisk(){
 
         display_disk_menu disks
 
-        read_disk_choice disks choice
-        result=$?
+        if read_disk_choice disks choice; then
+            :
+        else
+            result=$?
 
-        case "$result" in
-            1)
-                return 1
-                ;;
-            2)
-                continue
-                ;;
-        esac
+            case "$result" in
+                1)
+                    return 1
+                    ;;
+                2)
+                    continue
+                    ;;
+            esac
+        fi
 
         disk="${disks[$((choice - 1))]}"
 
