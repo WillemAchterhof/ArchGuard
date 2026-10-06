@@ -36,6 +36,7 @@ init_iso(){
 
     readonly ISO_SB_KEY="${ISO_SB_KEY:-/var/lib/sbctl/keys/db/db.key}"
     readonly ISO_SB_CERT="${ISO_SB_CERT:-/var/lib/sbctl/keys/db/db.pem}"
+    readonly ISO_SB_CERT_LOCAL="$ISO_SIGN/db.crt"
 
     # Paths inside the ISO (and inside the El Torito UEFI boot image)
     readonly ISO_PATH_KERNEL="/arch/boot/x86_64/vmlinuz-linux"
@@ -66,6 +67,12 @@ remove_dir(){
 }
 
 
+# The sbctl key directory is root-only. Fall back to sudo when needed.
+can_read(){
+    [[ -r "$1" ]] || sudo test -r "$1" 2>/dev/null
+}
+
+
 # ==============================================================================
 # Requirements
 # ==============================================================================
@@ -91,11 +98,11 @@ check_iso_requirements(){
         || fatal "ArchISO releng profile not found: $ISO_PROFILE_BASE"
 
     # Fail now instead of after a long build.
-    [[ -r "$ISO_SB_KEY" ]] \
-        || fatal "Signing key not readable: $ISO_SB_KEY (set ISO_SB_KEY)"
+    can_read "$ISO_SB_KEY" \
+        || fatal "Signing key not found/readable: $ISO_SB_KEY (set ISO_SB_KEY)"
 
-    [[ -r "$ISO_SB_CERT" ]] \
-        || fatal "Signing certificate not readable: $ISO_SB_CERT (set ISO_SB_CERT)"
+    can_read "$ISO_SB_CERT" \
+        || fatal "Signing certificate not found/readable: $ISO_SB_CERT (set ISO_SB_CERT)"
 }
 
 
@@ -199,20 +206,41 @@ extract_iso_boot(){
         || fatal "Failed to make extracted files writable."
 }
 
+prepare_signing_cert(){
+    # Public certificate only: keep a local copy so sbsign/sbverify can use it
+    # without privileges. The private key is never copied.
+    if [[ -r "$ISO_SB_CERT" ]]; then
+        cp -- "$ISO_SB_CERT" "$ISO_SB_CERT_LOCAL" \
+            || fatal "Failed to copy signing certificate."
+    else
+        sudo cat -- "$ISO_SB_CERT" > "$ISO_SB_CERT_LOCAL" \
+            || fatal "Failed to read signing certificate."
+    fi
+}
+
 sign_iso_boot(){
     msg "Signing boot loader, kernel and UEFI shell..."
 
     local file
+    local -a priv=()
+
+    # Key not readable as this user: run only sbsign with sudo.
+    [[ -r "$ISO_SB_KEY" ]] || priv=(sudo)
 
     for file in vmlinuz-linux BOOTx64.EFI shellx64.efi; do
-        sbsign \
+        "${priv[@]}" sbsign \
             --key "$ISO_SB_KEY" \
-            --cert "$ISO_SB_CERT" \
+            --cert "$ISO_SB_CERT_LOCAL" \
             --output "$ISO_SIGN/$file" \
             "$ISO_SIGN/$file" \
             || fatal "Failed to sign: $file"
 
-        sbverify --cert "$ISO_SB_CERT" "$ISO_SIGN/$file" >/dev/null \
+        if (( ${#priv[@]} > 0 )); then
+            sudo chown "$(id -u):$(id -g)" "$ISO_SIGN/$file" \
+                || fatal "Failed to restore ownership: $file"
+        fi
+
+        sbverify --cert "$ISO_SB_CERT_LOCAL" "$ISO_SIGN/$file" >/dev/null \
             || fatal "Signature check failed: $file"
     done
 }
@@ -243,7 +271,7 @@ verify_iso_esp(){
         mcopy -n -i "$ISO_SIGN_ESP" "::$path" "$check" \
             || fatal "Failed to read back from UEFI boot image: $path"
 
-        sbverify --cert "$ISO_SB_CERT" "$check" >/dev/null \
+        sbverify --cert "$ISO_SB_CERT_LOCAL" "$check" >/dev/null \
             || fatal "Not signed inside UEFI boot image: $path"
     done
 
@@ -286,13 +314,14 @@ verify_iso(){
         || fatal "Failed to read files back from signed ISO."
 
     for path in vmlinuz-linux BOOTx64.EFI; do
-        sbverify --cert "$ISO_SB_CERT" "$check/$path" >/dev/null \
+        sbverify --cert "$ISO_SB_CERT_LOCAL" "$check/$path" >/dev/null \
             || fatal "Not signed inside ISO: $path"
     done
 }
 
 sign_iso(){
     extract_iso_boot
+    prepare_signing_cert
     sign_iso_boot
     update_iso_esp
     verify_iso_esp
