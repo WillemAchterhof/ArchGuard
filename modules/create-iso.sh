@@ -6,11 +6,18 @@
 # /modules/create-iso.sh
 #
 # Responsibilities:
-#   - Prepare the ArchISO releng profile
-#   - Add packages required by the ArchGuard ISO
-#   - Install the ArchGuard boot launcher
+#   - Prepare the ArchISO releng profile (stock, only renamed)
 #   - Build the ISO
 #   - Locate the resulting ISO
+#   - Sign the boot chain (boot loader, kernel, UEFI shell) with the ArchGuard
+#     db key and repack the ISO so it boots with Secure Boot enabled
+#
+# Signing key (override with environment variables):
+#   ISO_SB_KEY   default: /var/lib/sbctl/keys/db/db.key
+#   ISO_SB_CERT  default: /var/lib/sbctl/keys/db/db.pem
+#
+# Host requirements:
+#   archiso  libisoburn  mtools  sbsigntools
 # ==============================================================================
 
 
@@ -25,8 +32,37 @@ init_iso(){
     readonly ISO_PROFILE="$ISO_DIR/profile"
     readonly ISO_WORK="$ISO_DIR/work"
     readonly ISO_OUTPUT="$ISO_DIR/output"
+    readonly ISO_SIGN="$ISO_DIR/sign"
+
+    readonly ISO_SB_KEY="${ISO_SB_KEY:-/var/lib/sbctl/keys/db/db.key}"
+    readonly ISO_SB_CERT="${ISO_SB_CERT:-/var/lib/sbctl/keys/db/db.pem}"
+
+    # Paths inside the ISO (and inside the El Torito UEFI boot image)
+    readonly ISO_PATH_KERNEL="/arch/boot/x86_64/vmlinuz-linux"
+    readonly ISO_PATH_LOADER="/EFI/BOOT/BOOTx64.EFI"
+    readonly ISO_PATH_SHELL="/shellx64.efi"
+
+    readonly ISO_SIGN_ESP="$ISO_SIGN/eltorito_img2_uefi.img"
 
     AG_ISO_FILE=""
+}
+
+
+# ==============================================================================
+# Helpers
+# ==============================================================================
+
+# mkarchiso runs unprivileged, so its work dir may not be removable with a
+# plain rm. Fall back to a user namespace (ArchWiki: archiso).
+remove_dir(){
+    local dir="$1"
+
+    [[ -e "$dir" ]] || return 0
+
+    rm -rf -- "$dir" 2>/dev/null && return 0
+
+    unshare --map-auto --map-root-user -- rm -rf -- "$dir" \
+        || fatal "Failed to remove: $dir"
 }
 
 
@@ -34,11 +70,32 @@ init_iso(){
 # Requirements
 # ==============================================================================
 
+install_iso_requirements(){
+    packages_install \
+        archiso \
+        libisoburn \
+        mtools \
+        sbsigntools \
+        archinstall \
+        grub
+}
+
 check_iso_requirements(){
-    require_command mkarchiso
+    local command
+
+    for command in mkarchiso osirrox xorriso mcopy sbsign sbverify; do
+        require_command "$command"
+    done
 
     [[ -d "$ISO_PROFILE_BASE" ]] \
         || fatal "ArchISO releng profile not found: $ISO_PROFILE_BASE"
+
+    # Fail now instead of after a long build.
+    [[ -r "$ISO_SB_KEY" ]] \
+        || fatal "Signing key not readable: $ISO_SB_KEY (set ISO_SB_KEY)"
+
+    [[ -r "$ISO_SB_CERT" ]] \
+        || fatal "Signing certificate not readable: $ISO_SB_CERT (set ISO_SB_CERT)"
 }
 
 
@@ -49,7 +106,7 @@ check_iso_requirements(){
 prepare_iso_profile(){
     msg "Preparing ArchISO profile..."
 
-    rm -rf -- "$ISO_PROFILE"
+    remove_dir "$ISO_PROFILE"
 
     mkdir -p "$ISO_DIR" \
         || fatal "Failed to create ISO directory."
@@ -64,94 +121,14 @@ prepare_iso_profile(){
 
 
 # ==============================================================================
-# ISO Packages
-# ==============================================================================
-
-configure_iso_packages(){
-    local package
-
-    for package in git curl; do
-        grep -qxF "$package" "$ISO_PROFILE/packages.x86_64" \
-            || printf '%s\n' "$package" >> "$ISO_PROFILE/packages.x86_64"
-    done
-}
-
-
-# ==============================================================================
-# ArchGuard Launcher
-# ==============================================================================
-
-create_iso_launcher(){
-    msg "Installing ArchGuard ISO launcher..."
-
-    install -Dm755 /dev/stdin \
-        "$ISO_PROFILE/airootfs/root/archguard_launch.sh" <<'EOF'
-#!/usr/bin/env bash
-
-AG_LABEL="AGBOOT"
-AG_MOUNT="/run/ag"
-AG_ENTRY="archguard_install.sh"
-AG_DEV="/dev/disk/by-label/$AG_LABEL"
-
-echo " [*] Waiting for $AG_LABEL partition..."
-
-udevadm settle
-
-for _ in $(seq 1 30); do
-    [[ -b "$AG_DEV" ]] && break
-    sleep 1
-done
-
-[[ -b "$AG_DEV" ]] \
-    || {
-        echo " [FATAL] $AG_LABEL partition not found."
-        exit 1
-    }
-
-mountpoint -q "$AG_MOUNT" ||
-    mount "$AG_DEV" "$AG_MOUNT" --mkdir ||
-    {
-        echo " [FATAL] Failed to mount $AG_DEV."
-        exit 1
-    }
-
-[[ -f "$AG_MOUNT/$AG_ENTRY" ]] ||
-    {
-        echo " [FATAL] $AG_ENTRY not found on $AG_LABEL."
-        exit 1
-    }
-
-echo " [*] Starting $AG_ENTRY..."
-
-exec "$AG_MOUNT/$AG_ENTRY"
-EOF
-}
-
-
-# ==============================================================================
-# Automatic Launcher
-# ==============================================================================
-
-configure_auto_launcher(){
-    msg "Configuring automatic ArchGuard launcher..."
-
-    cat >> "$ISO_PROFILE/airootfs/root/.zlogin" <<'EOF'
-
-if [[ "$(tty)" == /dev/tty1 ]]; then
-    /root/archguard_launch.sh
-fi
-EOF
-}
-
-
-# ==============================================================================
 # ISO Build
 # ==============================================================================
 
 build_iso(){
     msg "Building ArchGuard ISO..."
 
-    rm -rf -- "$ISO_WORK" "$ISO_OUTPUT"
+    remove_dir "$ISO_WORK"
+    remove_dir "$ISO_OUTPUT"
 
     mkdir -p "$ISO_OUTPUT" \
         || fatal "Failed to create ISO output directory."
@@ -188,7 +165,141 @@ find_iso(){
 
     AG_ISO_FILE="$iso"
 
-    success "ISO ready: $AG_ISO_FILE"
+    success "ISO built: $AG_ISO_FILE"
+}
+
+
+# ==============================================================================
+# ISO Signing
+# ==============================================================================
+
+extract_iso_boot(){
+    msg "Extracting boot files..."
+
+    remove_dir "$ISO_SIGN"
+
+    mkdir -p "$ISO_SIGN" \
+        || fatal "Failed to create signing directory."
+
+    osirrox \
+        -indev "$AG_ISO_FILE" \
+        -extract_boot_images "$ISO_SIGN/" \
+        -cpx \
+            "$ISO_PATH_KERNEL" \
+            "$ISO_PATH_LOADER" \
+            "$ISO_PATH_SHELL" \
+            "$ISO_SIGN/" \
+        || fatal "Failed to extract boot files from ISO."
+
+    [[ -f "$ISO_SIGN_ESP" ]] \
+        || fatal "UEFI boot image not found: $ISO_SIGN_ESP"
+
+    # Files extracted from the ISO are read-only.
+    chmod -R u+w "$ISO_SIGN" \
+        || fatal "Failed to make extracted files writable."
+}
+
+sign_iso_boot(){
+    msg "Signing boot loader, kernel and UEFI shell..."
+
+    local file
+
+    for file in vmlinuz-linux BOOTx64.EFI shellx64.efi; do
+        sbsign \
+            --key "$ISO_SB_KEY" \
+            --cert "$ISO_SB_CERT" \
+            --output "$ISO_SIGN/$file" \
+            "$ISO_SIGN/$file" \
+            || fatal "Failed to sign: $file"
+
+        sbverify --cert "$ISO_SB_CERT" "$ISO_SIGN/$file" >/dev/null \
+            || fatal "Signature check failed: $file"
+    done
+}
+
+update_iso_esp(){
+    msg "Updating UEFI boot image..."
+
+    mcopy -D oO -i "$ISO_SIGN_ESP" \
+        "$ISO_SIGN/vmlinuz-linux" "::$ISO_PATH_KERNEL" \
+        || fatal "Failed to copy kernel into UEFI boot image."
+
+    mcopy -D oO -i "$ISO_SIGN_ESP" \
+        "$ISO_SIGN/BOOTx64.EFI" "::$ISO_PATH_LOADER" \
+        || fatal "Failed to copy boot loader into UEFI boot image."
+
+    mcopy -D oO -i "$ISO_SIGN_ESP" \
+        "$ISO_SIGN/shellx64.efi" "::$ISO_PATH_SHELL" \
+        || fatal "Failed to copy UEFI shell into UEFI boot image."
+}
+
+verify_iso_esp(){
+    local path
+    local check="$ISO_SIGN/check.efi"
+
+    for path in "$ISO_PATH_KERNEL" "$ISO_PATH_LOADER"; do
+        rm -f -- "$check"
+
+        mcopy -n -i "$ISO_SIGN_ESP" "::$path" "$check" \
+            || fatal "Failed to read back from UEFI boot image: $path"
+
+        sbverify --cert "$ISO_SB_CERT" "$check" >/dev/null \
+            || fatal "Not signed inside UEFI boot image: $path"
+    done
+
+    rm -f -- "$check"
+}
+
+repack_iso(){
+    msg "Repacking ISO..."
+
+    local signed="$ISO_SIGN/signed.iso"
+
+    # -overwrite on: replace the unsigned files already present in the image.
+    xorriso \
+        -indev "$AG_ISO_FILE" \
+        -outdev "$signed" \
+        -overwrite on \
+        -map "$ISO_SIGN/vmlinuz-linux" "$ISO_PATH_KERNEL" \
+        -map "$ISO_SIGN/BOOTx64.EFI"   "$ISO_PATH_LOADER" \
+        -map "$ISO_SIGN/shellx64.efi"  "$ISO_PATH_SHELL" \
+        -boot_image any replay \
+        -append_partition 2 0xef "$ISO_SIGN_ESP" \
+        || fatal "xorriso repack failed."
+
+    mv -f -- "$signed" "$AG_ISO_FILE" \
+        || fatal "Failed to replace ISO with signed ISO."
+}
+
+verify_iso(){
+    msg "Verifying signed ISO..."
+
+    local check="$ISO_SIGN/verify"
+    local path
+
+    remove_dir "$check"
+    mkdir -p "$check"
+
+    osirrox \
+        -indev "$AG_ISO_FILE" \
+        -cpx "$ISO_PATH_KERNEL" "$ISO_PATH_LOADER" "$check/" \
+        || fatal "Failed to read files back from signed ISO."
+
+    for path in vmlinuz-linux BOOTx64.EFI; do
+        sbverify --cert "$ISO_SB_CERT" "$check/$path" >/dev/null \
+            || fatal "Not signed inside ISO: $path"
+    done
+}
+
+sign_iso(){
+    extract_iso_boot
+    sign_iso_boot
+    update_iso_esp
+    verify_iso_esp
+    repack_iso
+    verify_iso
+
+    success "ISO signed: $AG_ISO_FILE"
 }
 
 
@@ -196,13 +307,12 @@ find_iso(){
 # Module Entry Point
 # ==============================================================================
 
-run_iso(){
+run_build_iso(){
     init_iso
+    install_iso_requirements
     check_iso_requirements
     prepare_iso_profile
-    configure_iso_packages
-    create_iso_launcher
-    configure_auto_launcher
     build_iso
     find_iso
+    sign_iso
 }

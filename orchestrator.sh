@@ -40,7 +40,7 @@ source "$DIR_MAIN/modules/create-iso.sh"
 
 main(){
     run_selectdisk || fatal "USB disk selection cancled or failed."
-    build_iso
+    run_build_iso
     # fetch_installer
     # prepare_agboot
     # prepare_agkeys
