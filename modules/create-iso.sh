@@ -128,6 +128,58 @@ prepare_iso_profile(){
 
 
 # ==============================================================================
+# ArchGuard Boot
+# ==============================================================================
+
+prepare_archguard_boot(){
+    msg "Preparing ArchGuard Secure Boot bootstrap..."
+
+    local source="$DIR_MAIN/modules/secure-boot.sh"
+    local target="$ISO_PROFILE/airootfs/usr/local/bin/archguard-secure-boot.sh"
+
+    [[ -f "$source" ]] \
+        || fatal "Secure Boot module not found: $source"
+
+    mkdir -p "$(dirname "$target")" \
+        || fatal "Failed to create ArchGuard boot directory."
+
+    cp -- "$source" "$target" \
+        || fatal "Failed to copy Secure Boot module."
+
+    chmod 755 "$target" \
+        || fatal "Failed to make Secure Boot bootstrap executable."
+}
+
+
+prepare_archguard_boot_service(){
+    local service="$ISO_PROFILE/airootfs/etc/systemd/system/archguard-secure-boot.service"
+    local wants="$ISO_PROFILE/airootfs/etc/systemd/system/multi-user.target.wants"
+
+    mkdir -p "$wants" \
+        || fatal "Failed to create systemd service directory."
+
+    cat > "$service" <<'EOF'
+[Unit]
+Description=ArchGuard Secure Boot Bootstrap
+After=archiso.target
+Wants=archiso.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/archguard-secure-boot.sh
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    ln -sf \
+        "../archguard-secure-boot.service" \
+        "$wants/archguard-secure-boot.service"
+}
+
+
+# ==============================================================================
 # ISO Build
 # ==============================================================================
 
@@ -205,6 +257,11 @@ extract_iso_boot(){
     chmod -R u+w "$ISO_SIGN" \
         || fatal "Failed to make extracted files writable."
 }
+
+
+# ==============================================================================
+# Profile Preparation
+# ==============================================================================
 
 prepare_signing_cert(){
     # Public certificate only: keep a local copy so sbsign/sbverify can use it
@@ -341,6 +398,8 @@ run_build_iso(){
     install_iso_requirements
     check_iso_requirements
     prepare_iso_profile
+    prepare_archguard_boot
+    prepare_archguard_boot_service
     build_iso
     find_iso
     sign_iso
