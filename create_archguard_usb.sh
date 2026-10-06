@@ -85,7 +85,7 @@ project_remove(){
     if [[ -d "$DIR_PROJECT" ]]; then
         msg "Removing previous USB Builder project..."
 
-        rm -rf -- "$DIR_PROJECT" \
+        sudo rm -rf -- "$DIR_PROJECT" \
             || fatal "Failed to remove previous project."
     fi
 }
