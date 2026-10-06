@@ -130,6 +130,10 @@ prepare_iso_profile(){
 # ArchGuard Secure Boot bootstrap
 file_permissions["/usr/local/bin/archguard-secure-boot.sh"]="0:0:755"
 EOF
+
+    # ArchGuard Secure Boot tooling required inside the live ISO.
+    grep -qx 'sbctl' "$ISO_PROFILE/packages.x86_64" \
+        || printf 'sbctl\n' >> "$ISO_PROFILE/packages.x86_64"
 }
 
 
