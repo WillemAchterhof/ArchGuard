@@ -25,6 +25,8 @@ packages_install(){
 
 cleanup(){
 
+    (( ${AG_CLEANUP:-0} )) || return 0
+
     if (( ${#PACKAGES_ADDED[@]} > 0 )); then
         msg "Removing packages: ${PACKAGES_ADDED[*]}"
 
