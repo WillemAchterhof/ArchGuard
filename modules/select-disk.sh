@@ -61,6 +61,46 @@ display_disk_menu(){
     printf '\n'
 }
 
+# ==============================================================================
+# Confirmation
+# ==============================================================================
+
+confirm_usb_overwrite(){
+    local confirmation
+    local size
+    local model
+
+    size=$(lsblk -dnro SIZE "$AG_USB_DISK")
+    model=$(lsblk -dnro MODEL "$AG_USB_DISK" | xargs)
+
+    printf '\n'
+    printf '%s\n' '================================================'
+    printf '%s\n' ' ArchGuard USB Builder - Destructive Operation'
+    printf '%s\n' '================================================'
+    printf '\n'
+
+    printf 'Target disk : %s\n' "$AG_USB_DISK"
+    printf 'Model       : %s\n' "${model:--}"
+    printf 'Capacity    : %s\n' "$size"
+    printf '\n'
+
+    warn "ALL EXISTING DATA ON THIS DISK WILL BE DESTROYED."
+    printf '\n'
+    printf '%s\n' 'Press ENTER to continue, or enter anything else to cancel.'
+    printf '\n'
+
+    read -r -p 'Confirm: ' confirmation || {
+        msg "USB creation cancelled."
+        return 1
+    }
+
+    if [[ -n "$confirmation" ]]; then
+        msg "USB creation cancelled."
+        return 1
+    fi
+
+    validate_disk_choice "$AG_USB_DISK"
+}
 
 # ==============================================================================
 # User Input
@@ -168,6 +208,10 @@ run_selectdisk(){
         fi
 
         select_disk "$disk"
+        
+        confirm_usb_overwrite \
+        || return 1
+
         return 0
     done
 }
