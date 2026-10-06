@@ -37,8 +37,6 @@ packages_install(){
 }
 
 cleanup(){
-    (( ${AG_CLEANUP:-0} )) || return 0
-
     if [[ -n "${SUDO_KEEPALIVE_PID:-}" ]]; then
         kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
         wait "$SUDO_KEEPALIVE_PID" 2>/dev/null || true
