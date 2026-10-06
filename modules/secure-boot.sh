@@ -414,8 +414,6 @@ run_secure_boot(){
             ;;
 
         "$SB_STATE_ENABLED")
-            verify_archguard_keys
-
             find_archguard_usb
             find_archguard_partitions
 
