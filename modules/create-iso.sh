@@ -124,6 +124,12 @@ prepare_iso_profile(){
     sed -i \
         's|^iso_name=.*|iso_name="archguard"|' \
         "$ISO_PROFILE/profiledef.sh"
+
+    cat >> "$ISO_PROFILE/profiledef.sh" <<'EOF'
+
+# ArchGuard Secure Boot bootstrap
+file_permissions["/usr/local/bin/archguard-secure-boot.sh"]="0:0:755"
+EOF
 }
 
 
@@ -145,9 +151,6 @@ prepare_archguard_boot(){
 
     cp -- "$source" "$target" \
         || fatal "Failed to copy Secure Boot module."
-
-    chmod 755 "$target" \
-        || fatal "Failed to make Secure Boot bootstrap executable."
 }
 
 
