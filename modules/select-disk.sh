@@ -74,6 +74,8 @@ confirm_usb_overwrite(){
     size=$(lsblk -dnro SIZE "$AG_USB_DISK")
     model=$(lsblk -dnro MODEL "$AG_USB_DISK" | xargs)
 
+    clear
+
     printf '\n'
     printf '%s\n' '================================================'
     printf '%s\n' ' ArchGuard USB Builder - Destructive Operation'
