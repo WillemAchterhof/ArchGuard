@@ -66,6 +66,7 @@ display_disk_menu(){
 # ==============================================================================
 
 confirm_usb_overwrite(){
+    local passphrase
     local confirmation
     local size
     local model
@@ -86,20 +87,38 @@ confirm_usb_overwrite(){
 
     warn "ALL EXISTING DATA ON THIS DISK WILL BE DESTROYED."
     printf '\n'
-    printf '%s\n' 'Press ENTER to continue, or enter anything else to cancel.'
+
+    read -r -s -p \
+        'Type a passphrase for the Secure Boot key storage and press ENTER: ' \
+        passphrase
     printf '\n'
 
-    read -r -p 'Confirm: ' confirmation || {
-        msg "USB creation cancelled."
-        return 1
-    }
+    [[ -n "$passphrase" ]] \
+        || fatal "Passphrase cannot be empty."
 
-    if [[ -n "$confirmation" ]]; then
-        msg "USB creation cancelled."
+    read -r -s -p \
+        'Confirm passphrase and press ENTER to destroy all data on disk: ' \
+        confirmation
+    printf '\n'
+
+    if [[ "$passphrase" != "$confirmation" ]]; then
+        unset passphrase confirmation
+        msg "Passphrases do not match. USB creation cancelled."
         return 1
     fi
 
-    validate_disk_choice "$AG_USB_DISK"
+    unset confirmation
+
+    validate_disk_choice "$AG_USB_DISK" \
+        || {
+            unset passphrase
+            return 1
+        }
+
+    AG_AGKEYS_PASSPHRASE="$passphrase"
+    unset passphrase
+
+    success "USB destruction confirmed."
 }
 
 # ==============================================================================
