@@ -64,34 +64,38 @@ check_key_storage_requirements(){
 
 
 create_agkeys_partition(){
-    local existing_partition
-    local next_partition
-
-    existing_partition=$(
-        lsblk -nrpo NAME,TYPE "$AG_USB_DISK" |
-            awk '$2 == "part" { print $1 }' |
-            tail -n1
-    )
+    local first_free
+    local start
 
     [[ -z "${AG_AGKEYS_PART:-}" ]] \
         || fatal "AGKEYS partition is already assigned: $AG_AGKEYS_PART"
 
     msg "Creating ${AGKEYS_SIZE_MIB} MiB AGKEYS partition..."
 
-    next_partition=$(
-        lsblk -nrpo NAME,TYPE "$AG_USB_DISK" |
-            awk '$2 == "part" { count++ }
-                 END { print count + 1 }'
+    # Find the first sector after the existing ISO partitions.
+    first_free=$(
+        sudo sfdisk -d "$AG_USB_DISK" |
+            awk -F'[=, ]+' '/start=/ {
+                for (i = 1; i <= NF; i++) {
+                    if ($i == "start") s = $(i + 1)
+                    if ($i == "size")  z = $(i + 1)
+                }
+                if (s + z > m) m = s + z
+            }
+            END { print m }'
     )
 
-    sudo fdisk -t mbr --wipe never "$AG_USB_DISK" <<EOF
-n
-p
-$next_partition
+    [[ "$first_free" =~ ^[0-9]+$ ]] \
+        || fatal "Failed to determine the first free sector."
 
-+${AGKEYS_SIZE_MIB}M
-w
-EOF
+    # Align the new partition to 1 MiB.
+    start=$(( (first_free + 2047) / 2048 * 2048 ))
+
+    printf 'start=%s, size=%sMiB, type=83\n' \
+        "$start" \
+        "$AGKEYS_SIZE_MIB" |
+        sudo sfdisk --append "$AG_USB_DISK" >/dev/null \
+        || fatal "Failed to create AGKEYS partition."
 
     sudo partprobe "$AG_USB_DISK" \
         || fatal "Failed to reload the partition table."
@@ -99,10 +103,13 @@ EOF
     sudo udevadm settle \
         || fatal "Failed waiting for the new partition."
 
-    AG_AGKEYS_PART="${AG_USB_DISK}${next_partition}"
+    AG_AGKEYS_PART=$(
+        lsblk -nrpo NAME,START "$AG_USB_DISK" |
+            awk -v start="$start" '$2 == start { print $1 }'
+    )
 
     [[ -b "$AG_AGKEYS_PART" ]] \
-        || fatal "Failed to locate the new AGKEYS partition: $AG_AGKEYS_PART"
+        || fatal "Failed to locate the new AGKEYS partition."
 
     success "AGKEYS partition created: $AG_AGKEYS_PART"
 }
