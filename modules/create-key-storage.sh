@@ -63,6 +63,23 @@ done
         || fatal "Secure Boot key storage not found: $AGKEYS_KEY_SOURCE"
 }
 
+agkeys_cleanup(){
+    if mountpoint -q "$AGKEYS_MOUNT" 2>/dev/null; then
+        sudo umount "$AGKEYS_MOUNT" \
+            || warn "Failed to unmount AGKEYS: $AGKEYS_MOUNT"
+    fi
+
+    if sudo cryptsetup status "$AGKEYS_MAPPER" >/dev/null 2>&1; then
+        msg "Closing AGKEYS..."
+
+        sudo cryptsetup luksClose "$AGKEYS_MAPPER" \
+            || warn "Failed to close AGKEYS: $AGKEYS_MAPPER"
+    fi
+
+    sudo rmdir "$AGKEYS_MOUNT" 2>/dev/null || true
+
+    cleanup
+}
 
 create_agkeys_partition(){
     local first_free
