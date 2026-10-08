@@ -35,19 +35,20 @@ readonly AGKEYS_KEY_SOURCE="/var/lib/sbctl"
 check_key_storage_requirements(){
     local command
 
-    for command in \
-        sgdisk \
-        cryptsetup \
-        mkfs.ext4 \
-        mount \
-        umount \
-        lsblk \
-        partprobe \
-        udevadm \
-        cmp
-    do
-        require_command "$command"
-    done
+for command in \
+    sfdisk \
+    cryptsetup \
+    mkfs.ext4 \
+    mount \
+    umount \
+    lsblk \
+    partprobe \
+    udevadm \
+    awk \
+    cmp
+do
+    require_command "$command"
+done
 
     [[ -n "${AG_USB_DISK:-}" ]] \
         || fatal "No USB disk has been selected."
@@ -72,7 +73,6 @@ create_agkeys_partition(){
 
     msg "Creating ${AGKEYS_SIZE_MIB} MiB AGKEYS partition..."
 
-    # Find the first sector after the existing ISO partitions.
     first_free=$(
         sudo sfdisk -d "$AG_USB_DISK" |
             awk -F'[=, ]+' '/start=/ {
@@ -88,8 +88,8 @@ create_agkeys_partition(){
     [[ "$first_free" =~ ^[0-9]+$ ]] \
         || fatal "Failed to determine the first free sector."
 
-    # Align the new partition to 1 MiB.
-    start=$(( (first_free + 2047) / 2048 * 2048 ))
+    # Leave a 1 MiB gap, then align the partition to 1 MiB.
+    start=$(( (first_free + 2048 + 2047) / 2048 * 2048 ))
 
     printf 'start=%s, size=%sMiB, type=83\n' \
         "$start" \
@@ -112,6 +112,40 @@ create_agkeys_partition(){
         || fatal "Failed to locate the new AGKEYS partition."
 
     success "AGKEYS partition created: $AG_AGKEYS_PART"
+}
+
+
+format_agkeys(){
+    [[ -n "${AG_AGKEYS_PASSPHRASE:-}" ]] \
+        || fatal "AGKEYS passphrase not available."
+
+    [[ -b "${AG_AGKEYS_PART:-}" ]] \
+        || fatal "AGKEYS partition not available: ${AG_AGKEYS_PART:-unset}"
+
+    msg "Creating LUKS2 container on: $AG_AGKEYS_PART"
+
+    printf '%s' "$AG_AGKEYS_PASSPHRASE" |
+        sudo cryptsetup luksFormat \
+            --type luks2 \
+            --label "$AGKEYS_LABEL" \
+            --batch-mode \
+            "$AG_AGKEYS_PART" \
+            -d - \
+        || fatal "Failed to create AGKEYS LUKS2 container."
+
+    msg "Opening AGKEYS LUKS container..."
+
+    printf '%s' "$AG_AGKEYS_PASSPHRASE" |
+        sudo cryptsetup open \
+            "$AG_AGKEYS_PART" \
+            "$AGKEYS_MAPPER" \
+            -d - \
+        || fatal "Failed to open AGKEYS LUKS container."
+
+    [[ -b "/dev/mapper/$AGKEYS_MAPPER" ]] \
+        || fatal "AGKEYS mapper was not created: /dev/mapper/$AGKEYS_MAPPER"
+
+    success "AGKEYS LUKS2 container created and opened."
 }
 
 
