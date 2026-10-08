@@ -20,7 +20,9 @@
 #   0:0  User Mode, disabled    -> stop, ask user to enable Secure Boot
 #   else unexpected             -> stop, ask user to reset to Setup Mode
 #
-# Partitions are located by GPT partition label (AGKEYS / AGBOOT).
+# Partitions are located by filesystem / LUKS label:
+#   AGKEYS -> LUKS label
+#   AGBOOT -> filesystem label
 #
 # AGKEYS layout:
 #   sbctl/GUID
@@ -75,7 +77,6 @@ init_secure_boot(){
 
     readonly SB_AGKEYS_MAPPER="archguard-agkeys"
 
-    readonly SB_SBCTL_DIR="/var/lib/sbctl"
     readonly SB_AGKEYS_SBCTL="$SB_AGKEYS_MOUNT/sbctl"
 
     readonly SB_INSTALLER="archguard-install.sh"
@@ -83,7 +84,6 @@ init_secure_boot(){
     readonly SB_STATE_SETUP=10
     readonly SB_STATE_ENABLED=20
     readonly SB_STATE_DISABLED=30
-    readonly SB_STATE_UNEXPECTED=40
 
     AG_USB_DISK=""
     AG_AGKEYS_PART=""
@@ -138,7 +138,7 @@ check_secure_boot(){
         *)
             warn \
                 "Unexpected Secure Boot state: SetupMode=$setup_mode SecureBoot=$secure_boot"
-            return "$SB_STATE_UNEXPECTED"
+            return
             ;;
     esac
 }
@@ -148,12 +148,6 @@ check_secure_boot(){
 # ArchISO Boot Source Discovery
 # ==============================================================================
 
-# Return the value of a kernel command-line parameter.
-#
-# Example:
-#   archisosearchuuid=2026-10-06-19-32-59-00
-#
-# Returns an empty string when the parameter is absent.
 cmdline_value(){
     local parameter="$1"
 
@@ -162,19 +156,6 @@ cmdline_value(){
         "$SB_CMDLINE"
 }
 
-# Determine which block device contains the ArchISO filesystem.
-#
-# ArchISO 91 provides:
-#
-#   archisosearchuuid=<filesystem UUID>
-#
-# In the current ArchGuard ISO this resolves to /dev/sda1.
-#
-# Fallback order:
-#   1. /run/archiso/bootmnt
-#   2. archisosearchuuid
-#   3. archisolabel
-#   4. archisodevice
 find_boot_source(){
     local source=""
     local value=""
@@ -248,8 +229,6 @@ find_archguard_usb(){
 
     disk="/dev/$parent"
 
-    # Keep this as a safety check. The ArchGuard boot filesystem should be
-    # located on a USB disk, and the parent device must be a whole disk.
     lsblk -dnro TRAN,TYPE "$disk" |
         awk '
             $1 == "usb" && $2 == "disk" {
@@ -277,7 +256,7 @@ find_partition_by_label(){
     local disk="$1"
     local label="$2"
 
-    lsblk -lnpo NAME,PARTLABEL "$disk" |
+    lsblk -lnpo NAME,LABEL "$disk" |
         awk -v label="$label" '$2 == label { print $1; exit }'
 }
 
@@ -292,11 +271,11 @@ find_archguard_partitions(){
 
     [[ -b "$AG_AGKEYS_PART" ]] \
         || fatal \
-            "AGKEYS partition not found on $AG_USB_DISK (GPT label: $SB_AGKEYS_LABEL)"
+            "AGKEYS partition not found on $AG_USB_DISK (label: $SB_AGKEYS_LABEL)"
 
     [[ -b "$AG_AGBOOT_PART" ]] \
         || fatal \
-            "AGBOOT partition not found on $AG_USB_DISK (GPT label: $SB_AGBOOT_LABEL)"
+            "AGBOOT partition not found on $AG_USB_DISK (label: $SB_AGBOOT_LABEL)"
 
     success "AGKEYS: $AG_AGKEYS_PART"
     success "AGBOOT: $AG_AGBOOT_PART"
@@ -308,13 +287,13 @@ find_archguard_partitions(){
 # ==============================================================================
 
 cleanup_agkeys(){
-    mountpoint -q "$SB_AGKEYS_MOUNT" 2>/dev/null \
-        && umount "$SB_AGKEYS_MOUNT" 2>/dev/null || true
+    if mountpoint -q "$SB_AGKEYS_MOUNT" 2>/dev/null; then
+        umount "$SB_AGKEYS_MOUNT" 2>/dev/null || true
+    fi
 
-    [[ -e "/dev/mapper/$SB_AGKEYS_MAPPER" ]] \
-        && cryptsetup close "$SB_AGKEYS_MAPPER" 2>/dev/null || true
-
-    remove_sbctl_keys || true
+    if cryptsetup status "$SB_AGKEYS_MAPPER" >/dev/null 2>&1; then
+        cryptsetup close "$SB_AGKEYS_MAPPER" 2>/dev/null || true
+    fi
 }
 
 unlock_agkeys(){
@@ -350,58 +329,41 @@ close_agkeys(){
     fi
 
     trap - EXIT
+
+    success "AGKEYS closed."
 }
 
-install_sbctl_keys(){
-    local file
 
-    for file in \
-        GUID \
-        keys/PK/PK.key   keys/PK/PK.pem \
-        keys/KEK/KEK.key keys/KEK/KEK.pem \
-        keys/db/db.key   keys/db/db.pem
-    do
-        [[ -f "$SB_AGKEYS_SBCTL/$file" ]] \
-            || fatal "Missing in AGKEYS: sbctl/$file"
-    done
+# ==============================================================================
+# sbctl Storage
+# ==============================================================================
 
-    msg "Loading ArchGuard keys into sbctl..."
+prepare_sbctl_storage(){
+    msg "Linking AGKEYS Secure Boot keys..."
 
-    remove_sbctl_keys
+    rm -rf -- /var/lib/sbctl
 
-    mkdir -p "$SB_SBCTL_DIR" \
-        || fatal "Failed to create $SB_SBCTL_DIR"
+    ln -s "$SB_AGKEYS_SBCTL" /var/lib/ \
+        || fatal "Failed to link AGKEYS sbctl storage."
 
-    cp -a \
-        "$SB_AGKEYS_SBCTL/keys" \
-        "$SB_SBCTL_DIR/keys" \
-        || fatal "Failed to copy sbctl keys."
-
-    cp -a \
-        "$SB_AGKEYS_SBCTL/GUID" \
-        "$SB_SBCTL_DIR/GUID" \
-        || fatal "Failed to copy sbctl GUID."
-
-    chmod -R go-rwx "$SB_SBCTL_DIR" \
-        || fatal "Failed to restrict $SB_SBCTL_DIR"
+    success "sbctl is using AGKEYS key storage."
 }
 
-remove_sbctl_keys(){
-    rm -rf -- \
-        "$SB_SBCTL_DIR/keys" \
-        "$SB_SBCTL_DIR/GUID"
-}
+# ==============================================================================
+# Secure Boot Enrollment
+# ==============================================================================
 
 enroll_secure_boot(){
-    install_sbctl_keys
+    prepare_sbctl_storage
 
     msg "Checking Secure Boot status..."
 
-    sbctl status
+    sbctl status \
+        || fatal "Failed to query sbctl status."
 
     # Custom keys only:
-    #   - no --microsoft (-m)
-    #   - no OEM keys (-f)
+    #   - no Microsoft keys
+    #   - no OEM keys
     #
     # --yes-this-might-brick-my-machine only acknowledges sbctl's warning.
     msg "Enrolling ArchGuard Secure Boot keys..."
@@ -410,23 +372,34 @@ enroll_secure_boot(){
         --yes-this-might-brick-my-machine \
         || fatal "sbctl enroll-keys failed."
 
-    remove_sbctl_keys
-
     msg "Enrolled keys:"
 
-    sbctl list-enrolled-keys
+    sbctl list-enrolled-keys \
+        || fatal "Failed to list enrolled Secure Boot keys."
+
+    success "ArchGuard Secure Boot keys enrolled."
 }
 
 verify_enrollment(){
     local setup_mode
+    local secure_boot
 
     setup_mode=$(read_efi_variable "SetupMode") \
         || fatal "Failed to read SetupMode state."
+
+    secure_boot=$(read_efi_variable "SecureBoot") \
+        || fatal "Failed to read SecureBoot state."
 
     [[ "$setup_mode" == "0" ]] \
         || fatal "Enrollment failed: firmware is still in Setup Mode."
 
     success "ArchGuard Secure Boot keys enrolled."
+
+    if [[ "$secure_boot" == "1" ]]; then
+        success "Secure Boot is enabled."
+    else
+        msg "Secure Boot is currently disabled; it must be enabled in UEFI."
+    fi
 }
 
 
@@ -448,6 +421,8 @@ mount_agboot(){
     [[ -f "$SB_AGBOOT_MOUNT/$SB_INSTALLER" ]] \
         || fatal \
             "Installer not found: $SB_AGBOOT_MOUNT/$SB_INSTALLER"
+
+    success "AGBOOT mounted."
 }
 
 launch_installer(){
@@ -604,10 +579,3 @@ run_secure_boot(){
 
     esac
 }
-
-
-# ==============================================================================
-# Entry Point
-# ==============================================================================
-
-run_secure_boot
