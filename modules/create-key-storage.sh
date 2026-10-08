@@ -116,33 +116,36 @@ create_agkeys_partition(){
 
 
 format_agkeys(){
-    msg "Formatting AGKEYS as LUKS2..."
+    [[ -n "${AG_AGKEYS_PASSPHRASE:-}" ]] \
+        || fatal "AGKEYS passphrase not available."
+
+    [[ -b "${AG_AGKEYS_PART:-}" ]] \
+        || fatal "AGKEYS partition not available: ${AG_AGKEYS_PART:-unset}"
+
+    msg "Creating LUKS2 container on: $AG_AGKEYS_PART"
 
     printf '%s' "$AG_AGKEYS_PASSPHRASE" |
         sudo cryptsetup luksFormat \
             --type luks2 \
             --batch-mode \
-            --key-file=- \
             "$AG_AGKEYS_PART" \
-        || fatal "Failed to format AGKEYS as LUKS2."
+            -d - \
+        || fatal "Failed to create AGKEYS LUKS2 container."
 
-    success "AGKEYS LUKS2 container created."
-}
-
-
-open_agkeys(){
-    msg "Opening AGKEYS..."
+    msg "Opening AGKEYS LUKS container"
 
     printf '%s' "$AG_AGKEYS_PASSPHRASE" |
-        sudo cryptsetup luksOpen \
-            --key-file=- \
+        sudo cryptsetup open \
             "$AG_AGKEYS_PART" \
             "$AGKEYS_MAPPER" \
-        || fatal "Failed to open AGKEYS."
+            -d - \
+        || fatal "Failed to open AGKEYS LUKS container."
 
-    success "AGKEYS unlocked."
+    [[ -b "/dev/mapper/$AGKEYS_MAPPER" ]] \
+        || fatal "AGKEYS mapper was not created: /dev/mapper/$AGKEYS_MAPPER"
+
+    success "AGKEYS LUKS2 container created and opened."
 }
-
 
 create_agkeys_filesystem(){
     msg "Creating AGKEYS filesystem..."
@@ -282,7 +285,6 @@ create_key_storage(){
 
     create_agkeys_partition
     format_agkeys
-    open_agkeys
     create_agkeys_filesystem
     mount_agkeys
     prepare_agkeys_tree
