@@ -23,6 +23,12 @@
 #
 # Result:
 #   AG_AGKEYS_PART -> partition containing the encrypted AGKEYS storage
+#
+# Notes:
+#   - The partition is added to the ISO's MBR table (the ISO's hybrid MBR/GPT
+#     is left untouched). MBR partitions have no GPT name, so AGKEYS is found
+#     by its LUKS label (lsblk LABEL column).
+#   - An EXIT trap closes AGKEYS if anything fails while it is unlocked.
 # ==============================================================================
 
 readonly AGKEYS_SIZE_MIB=64
@@ -35,20 +41,23 @@ readonly AGKEYS_KEY_SOURCE="/var/lib/sbctl"
 check_key_storage_requirements(){
     local command
 
-for command in \
-    sfdisk \
-    cryptsetup \
-    mkfs.ext4 \
-    mount \
-    umount \
-    lsblk \
-    partprobe \
-    udevadm \
-    awk \
-    cmp
-do
-    require_command "$command"
-done
+    for command in \
+        sfdisk \
+        cryptsetup \
+        mkfs.ext4 \
+        mount \
+        umount \
+        mountpoint \
+        lsblk \
+        partprobe \
+        udevadm \
+        install \
+        sync \
+        awk \
+        cmp
+    do
+        require_command "$command"
+    done
 
     [[ -n "${AG_USB_DISK:-}" ]] \
         || fatal "No USB disk has been selected."
@@ -63,7 +72,9 @@ done
         || fatal "Secure Boot key storage not found: $AGKEYS_KEY_SOURCE"
 }
 
-agkeys_cleanup(){
+
+# Unmount and close AGKEYS. Safe to call at any time (used by the EXIT trap).
+agkeys_close_devices(){
     if mountpoint -q "$AGKEYS_MOUNT" 2>/dev/null; then
         sudo umount "$AGKEYS_MOUNT" \
             || warn "Failed to unmount AGKEYS: $AGKEYS_MOUNT"
@@ -77,16 +88,34 @@ agkeys_cleanup(){
     fi
 
     sudo rmdir "$AGKEYS_MOUNT" 2>/dev/null || true
+}
+
+
+agkeys_cleanup(){
+    agkeys_close_devices
 
     cleanup
 }
+
+
+agkeys_fatal(){
+    local message="$1"
+
+    printf '[FATAL] %s\n' "$message"
+
+    trap - EXIT
+    agkeys_cleanup
+
+    exit 1
+}
+
 
 create_agkeys_partition(){
     local first_free
     local start
 
     [[ -z "${AG_AGKEYS_PART:-}" ]] \
-        || fatal "AGKEYS partition is already assigned: $AG_AGKEYS_PART"
+        || agkeys_fatal "AGKEYS partition is already assigned: $AG_AGKEYS_PART"
 
     msg "Creating ${AGKEYS_SIZE_MIB} MiB AGKEYS partition..."
 
@@ -100,33 +129,34 @@ create_agkeys_partition(){
                 if (s + z > m) m = s + z
             }
             END { print m }'
-    )
+    ) || agkeys_fatal "Failed to determine the first free sector."
 
     [[ "$first_free" =~ ^[0-9]+$ ]] \
-        || fatal "Failed to determine the first free sector."
+        || agkeys_fatal "Failed to determine the first free sector."
 
-    # Leave a 1 MiB gap, then align the partition to 1 MiB.
+    # Leave a 1 MiB gap (the ISO's backup GPT sits right after its last
+    # partition), then align the partition to 1 MiB.
     start=$(( (first_free + 2048 + 2047) / 2048 * 2048 ))
 
     printf 'start=%s, size=%sMiB, type=83\n' \
         "$start" \
         "$AGKEYS_SIZE_MIB" |
         sudo sfdisk --append "$AG_USB_DISK" >/dev/null \
-        || fatal "Failed to create AGKEYS partition."
+        || agkeys_fatal "Failed to create AGKEYS partition."
 
     sudo partprobe "$AG_USB_DISK" \
-        || fatal "Failed to reload the partition table."
+        || agkeys_fatal "Failed to reload the partition table."
 
     sudo udevadm settle \
-        || fatal "Failed waiting for the new partition."
+        || agkeys_fatal "Failed waiting for the new partition."
 
     AG_AGKEYS_PART=$(
         lsblk -nrpo NAME,START "$AG_USB_DISK" |
             awk -v start="$start" '$2 == start { print $1 }'
-    )
+    ) || agkeys_fatal "Failed to locate the new AGKEYS partition."
 
     [[ -b "$AG_AGKEYS_PART" ]] \
-        || fatal "Failed to locate the new AGKEYS partition."
+        || agkeys_fatal "Failed to locate the new AGKEYS partition."
 
     success "AGKEYS partition created: $AG_AGKEYS_PART"
 }
@@ -134,10 +164,11 @@ create_agkeys_partition(){
 
 format_agkeys(){
     [[ -n "${AG_AGKEYS_PASSPHRASE:-}" ]] \
-        || fatal "AGKEYS passphrase not available."
+        || agkeys_fatal "AGKEYS passphrase not available."
 
     [[ -b "${AG_AGKEYS_PART:-}" ]] \
-        || fatal "AGKEYS partition not available: ${AG_AGKEYS_PART:-unset}"
+        || agkeys_fatal \
+            "AGKEYS partition not available: ${AG_AGKEYS_PART:-unset}"
 
     msg "Creating LUKS2 container on: $AG_AGKEYS_PART"
 
@@ -148,7 +179,11 @@ format_agkeys(){
             --batch-mode \
             "$AG_AGKEYS_PART" \
             -d - \
-        || fatal "Failed to create AGKEYS LUKS2 container."
+        || agkeys_fatal "Failed to create AGKEYS LUKS2 container."
+
+    # From here on, never leave AGKEYS unlocked if the run is interrupted
+    # or fails outside agkeys_fatal.
+    trap 'agkeys_close_devices' EXIT
 
     msg "Opening AGKEYS LUKS container..."
 
@@ -157,46 +192,15 @@ format_agkeys(){
             "$AG_AGKEYS_PART" \
             "$AGKEYS_MAPPER" \
             -d - \
-        || fatal "Failed to open AGKEYS LUKS container."
+        || agkeys_fatal "Failed to open AGKEYS LUKS container."
 
     [[ -b "/dev/mapper/$AGKEYS_MAPPER" ]] \
-        || fatal "AGKEYS mapper was not created: /dev/mapper/$AGKEYS_MAPPER"
+        || agkeys_fatal \
+            "AGKEYS mapper was not created: /dev/mapper/$AGKEYS_MAPPER"
 
     success "AGKEYS LUKS2 container created and opened."
 }
 
-
-format_agkeys(){
-    [[ -n "${AG_AGKEYS_PASSPHRASE:-}" ]] \
-        || fatal "AGKEYS passphrase not available."
-
-    [[ -b "${AG_AGKEYS_PART:-}" ]] \
-        || fatal "AGKEYS partition not available: ${AG_AGKEYS_PART:-unset}"
-
-    msg "Creating LUKS2 container on: $AG_AGKEYS_PART"
-
-    printf '%s' "$AG_AGKEYS_PASSPHRASE" |
-        sudo cryptsetup luksFormat \
-            --type luks2 \
-            --batch-mode \
-            "$AG_AGKEYS_PART" \
-            -d - \
-        || fatal "Failed to create AGKEYS LUKS2 container."
-
-    msg "Opening AGKEYS LUKS container"
-
-    printf '%s' "$AG_AGKEYS_PASSPHRASE" |
-        sudo cryptsetup open \
-            "$AG_AGKEYS_PART" \
-            "$AGKEYS_MAPPER" \
-            -d - \
-        || fatal "Failed to open AGKEYS LUKS container."
-
-    [[ -b "/dev/mapper/$AGKEYS_MAPPER" ]] \
-        || fatal "AGKEYS mapper was not created: /dev/mapper/$AGKEYS_MAPPER"
-
-    success "AGKEYS LUKS2 container created and opened."
-}
 
 create_agkeys_filesystem(){
     msg "Creating AGKEYS filesystem..."
@@ -205,7 +209,7 @@ create_agkeys_filesystem(){
         -L "$AGKEYS_LABEL" \
         "/dev/mapper/$AGKEYS_MAPPER" \
         >/dev/null \
-        || fatal "Failed to create AGKEYS filesystem."
+        || agkeys_fatal "Failed to create AGKEYS filesystem."
 
     success "AGKEYS filesystem created."
 }
@@ -215,12 +219,12 @@ mount_agkeys(){
     msg "Mounting AGKEYS..."
 
     sudo mkdir -p "$AGKEYS_MOUNT" \
-        || fatal "Failed to create AGKEYS mount point."
+        || agkeys_fatal "Failed to create AGKEYS mount point."
 
     sudo mount \
         "/dev/mapper/$AGKEYS_MAPPER" \
         "$AGKEYS_MOUNT" \
-        || fatal "Failed to mount AGKEYS."
+        || agkeys_fatal "Failed to mount AGKEYS."
 
     success "AGKEYS mounted."
 }
@@ -235,7 +239,7 @@ prepare_agkeys_tree(){
         "$AGKEYS_MOUNT/sbctl/keys/PK" \
         "$AGKEYS_MOUNT/sbctl/keys/KEK" \
         "$AGKEYS_MOUNT/sbctl/keys/db" \
-        || fatal "Failed to create AGKEYS directory structure."
+        || agkeys_fatal "Failed to create AGKEYS directory structure."
 }
 
 
@@ -244,12 +248,12 @@ copy_key_file(){
     local target="$2"
 
     [[ -f "$source" ]] \
-        || fatal "Required Secure Boot key file not found: $source"
+        || agkeys_fatal "Required Secure Boot key file not found: $source"
 
     sudo install -m 600 \
         "$source" \
         "$target" \
-        || fatal "Failed to copy Secure Boot key file: $source"
+        || agkeys_fatal "Failed to copy Secure Boot key file: $source"
 }
 
 
@@ -294,8 +298,16 @@ copy_secure_boot_keys(){
 verify_secure_boot_keys(){
     local source="$AGKEYS_KEY_SOURCE"
     local target="$AGKEYS_MOUNT/sbctl"
+    local file
 
     msg "Verifying Secure Boot key storage..."
+
+    # Flush and drop caches so cmp reads the files back from the device
+    # instead of comparing against what was just written to memory.
+    sync
+
+    sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches' \
+        || agkeys_fatal "Failed to drop caches before verification."
 
     for file in \
         GUID \
@@ -309,7 +321,7 @@ verify_secure_boot_keys(){
         sudo cmp \
             "$source/$file" \
             "$target/$file" \
-            || fatal "AGKEYS verification failed: sbctl/$file"
+            || agkeys_fatal "AGKEYS verification failed: sbctl/$file"
     done
 
     success "AGKEYS key verification passed."
@@ -320,12 +332,15 @@ close_agkeys(){
     msg "Closing AGKEYS..."
 
     sudo umount "$AGKEYS_MOUNT" \
-        || fatal "Failed to unmount AGKEYS."
+        || agkeys_fatal "Failed to unmount AGKEYS."
 
     sudo cryptsetup luksClose "$AGKEYS_MAPPER" \
-        || fatal "Failed to close AGKEYS."
+        || agkeys_fatal "Failed to close AGKEYS."
 
     sudo rmdir "$AGKEYS_MOUNT" 2>/dev/null || true
+
+    # Closed cleanly: the EXIT trap is no longer needed.
+    trap - EXIT
 
     success "AGKEYS closed."
 }
