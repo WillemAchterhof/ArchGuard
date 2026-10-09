@@ -360,6 +360,11 @@ link_sbctl_keys(){
             || fatal "Missing in AGKEYS: sbctl/$file"
     done
 
+    msg "Removing existing sbctl directory: $SB_SBCTL_DIR"
+
+    rm -rf -- "$SB_SBCTL_DIR" \
+        || fatal "Failed to remove existing $SB_SBCTL_DIR"
+
     if [[ -e "$SB_SBCTL_DIR" && ! -L "$SB_SBCTL_DIR" ]]; then
         fatal "$SB_SBCTL_DIR already exists and is not a symlink."
     fi
