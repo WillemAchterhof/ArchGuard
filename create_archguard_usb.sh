@@ -119,7 +119,7 @@ handoff(){
     msg "Starting ArchGuard USB Builder..."
 
     export DIR_PROJECT
-    exec "$orchestrator"
+    exec "$orchestrator" "$@"
 }
 
 # ==============================================================================
@@ -132,7 +132,7 @@ main(){
     check_internet
     project_remove
     project_clone
-    handoff
+    handoff "$@"
 }
 
 main "$@"
