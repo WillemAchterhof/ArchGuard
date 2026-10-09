@@ -16,6 +16,13 @@ chmod +x create_archguard_usb.sh
 ./create_archguard_usb.sh
 ```
 
-Boot to your UEFI and make sure you can boot from USB and secure boot is in setup mode.
+### UEFI Configuration
 
-**Important:** Keep your Secure Boot private keys safe. The builder uses your existing `sbctl` keys to sign the ArchGuard ISO.
+Before booting from the USB, enter your UEFI firmware settings and make sure that:
+
+- USB boot is enabled.
+- Secure Boot is in **Setup Mode**.
+
+### Important
+
+Keep your Secure Boot private keys safe. The builder uses your existing `sbctl` keys to sign the ArchGuard ISO.
