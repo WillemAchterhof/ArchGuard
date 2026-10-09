@@ -166,6 +166,7 @@ prepare_archguard_boot_service(){
         || fatal "Failed to create systemd service directory."
 
     cat > "$service" <<'EOF'
+
 [Unit]
 Description=ArchGuard Secure Boot Bootstrap
 After=archiso.target
@@ -174,6 +175,13 @@ Wants=archiso.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/archguard-secure-boot.sh
+StandardInput=tty
+StandardOutput=journal+console
+StandardError=journal+console
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
 RemainAfterExit=no
 
 [Install]
