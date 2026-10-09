@@ -89,7 +89,7 @@ init_secure_boot(){
     readonly SB_STATE_SETUP=10
     readonly SB_STATE_ENABLED=20
     readonly SB_STATE_DISABLED=30
-    
+
     AG_USB_DISK=""
     AG_AGKEYS_PART=""
     AG_AGBOOT_PART=""
@@ -268,24 +268,27 @@ find_partition_by_label(){
         awk -v label="$label" '$2 == label && $3 == "part" { print $1; exit }'
 }
 
-find_archguard_partitions(){
+find_agkeys_partition(){
     AG_AGKEYS_PART=$(find_partition_by_label \
         "$AG_USB_DISK" \
         "$SB_AGKEYS_LABEL")
-
-    AG_AGBOOT_PART=$(find_partition_by_label \
-        "$AG_USB_DISK" \
-        "$SB_AGBOOT_LABEL")
 
     [[ -b "$AG_AGKEYS_PART" ]] \
         || fatal \
             "AGKEYS partition not found on $AG_USB_DISK (label: $SB_AGKEYS_LABEL)"
 
+    success "AGKEYS: $AG_AGKEYS_PART"
+}
+
+find_agboot_partition(){
+    AG_AGBOOT_PART=$(find_partition_by_label \
+        "$AG_USB_DISK" \
+        "$SB_AGBOOT_LABEL")
+
     [[ -b "$AG_AGBOOT_PART" ]] \
         || fatal \
             "AGBOOT partition not found on $AG_USB_DISK (label: $SB_AGBOOT_LABEL)"
 
-    success "AGKEYS: $AG_AGKEYS_PART"
     success "AGBOOT: $AG_AGBOOT_PART"
 }
 
@@ -436,9 +439,17 @@ mount_agboot(){
         "$SB_AGBOOT_MOUNT" \
         || fatal "Failed to mount AGBOOT."
 
+    local mounted_source
+    mounted_source=$(findmnt -nro SOURCE --target "$SB_AGBOOT_MOUNT") \
+        || fatal "Failed to verify AGBOOT mount."
+
+    [[ "$(readlink -f "$mounted_source")" == "$(readlink -f "$AG_AGBOOT_PART")" ]] \
+        || fatal "AGBOOT mount source does not match the expected partition."
+
     [[ -f "$SB_AGBOOT_MOUNT/$SB_INSTALLER" ]] \
-        || fatal \
-            "Installer not found: $SB_AGBOOT_MOUNT/$SB_INSTALLER"
+        || fatal "Installer not found: $SB_AGBOOT_MOUNT/$SB_INSTALLER"
+
+    success "AGBOOT mounted and verified."
 }
 
 launch_installer(){
@@ -563,7 +574,7 @@ run_secure_boot(){
 
         "$SB_STATE_SETUP")
             find_archguard_usb
-            find_archguard_partitions
+            find_agkeys_partition
 
             unlock_agkeys
             enroll_secure_boot
@@ -575,7 +586,7 @@ run_secure_boot(){
 
         "$SB_STATE_ENABLED")
             find_archguard_usb
-            find_archguard_partitions
+            find_agboot_partition
 
             mount_agboot
             launch_installer
