@@ -171,37 +171,31 @@ prepare_archguard_boot(){
 prepare_archguard_boot_login(){
     msg "Configuring ArchGuard tty1 login..."
 
-    local root_home="$ISO_PROFILE/airootfs/root"
-    local profile="$root_home/.bash_profile"
+    local zlogin="$ISO_PROFILE/airootfs/root/.zlogin"
     local marker="# ARCHGUARD_SECURE_BOOT_LOGIN"
 
-    mkdir -p "$root_home" \
-        || fatal "Failed to create root home directory."
+    [[ -f "$zlogin" ]] \
+        || fatal "releng .zlogin not found: $zlogin"
 
-    touch "$profile" \
-        || fatal "Failed to create root Bash profile."
-
-    # Make this operation idempotent if the profile already contains our block.
-    if grep -Fqx "$marker" "$profile"; then
+    # Idempotent if the profile already contains our block.
+    if grep -Fqx "$marker" "$zlogin"; then
         msg "ArchGuard login launch already configured."
         return 0
     fi
 
-    cat >> "$profile" <<'EOF'
+    cat >> "$zlogin" <<'EOF'
 
 # ARCHGUARD_SECURE_BOOT_LOGIN
-# Run the Secure Boot bootstrap only in the first virtual terminal.
+# Run the Secure Boot bootstrap only on the first virtual terminal.
+# No exec: if it fails or exits, the root shell stays available.
 if [[ "$(tty 2>/dev/null)" == "/dev/tty1" ]]; then
     if [[ -x /usr/local/bin/archguard-secure-boot.sh ]]; then
-        exec /usr/local/bin/archguard-secure-boot.sh
+        /usr/local/bin/archguard-secure-boot.sh
     else
         printf '[FATAL] ArchGuard Secure Boot bootstrap not found or not executable.\n' >&2
     fi
 fi
 EOF
-
-    chmod 0644 "$profile" \
-        || fatal "Failed to set root Bash profile permissions."
 }
 
 
