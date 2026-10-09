@@ -30,8 +30,8 @@ source "$DIR_MAIN/modules/select-disk.sh"
 source "$DIR_MAIN/modules/create-iso.sh"
 source "$DIR_MAIN/modules/create-usb.sh"
 source "$DIR_MAIN/modules/create-key-storage.sh"
-source "$DIR_MAIN//modules/create-boot-storage.sh"
-source "$DIR_MAIN//modules/backup-configuration-files.sh"
+source "$DIR_MAIN/modules/create-boot-storage.sh"
+source "$DIR_MAIN/modules/backup-configuration-files.sh"
 
 # ==============================================================================
 # Main
