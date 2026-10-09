@@ -1,18 +1,19 @@
-# ArchGuard v0.1
+## Prerequisites
 
-## Goal
+### Windows 11 (WSL)
 
-A bootable USB that works with the ArchGuard custom Secure Boot keys.
+Install WSL with an Arch Linux distribution. Use **Arch Linux**.
 
-If the keys are already enrolled in UEFI, the USB boots normally.
+### Linux (WSL)
 
-If they are not:
+Open your Arch Linux terminal and install `sbctl`. Generate your Secure Boot keys if you haven't already.
 
-1. Enter UEFI and put Secure Boot into Setup Mode.
-2. Boot the ArchGuard USB.
-3. ArchGuard detects Setup Mode and enrolls the custom PK, KEK and db keys.
-4. ArchGuard reboots back into UEFI.
-5. Configure and lock down UEFI as desired, keeping TPM PCR measurements in mind.
-6. Enable Secure Boot and boot the ArchGuard USB again.
+Next, download and run the ArchGuard USB builder script:
 
-**v0.1 is only concerned with establishing the Secure Boot trust chain.**
+```bash
+curl -fsSLO https://raw.githubusercontent.com/WillemAchterhof/archguard-usb-builder/refs/heads/v0.1/create_archguard_usb.sh
+chmod +x create_archguard_usb.sh
+./create_archguard_usb.sh
+```
+
+**Important:** Keep your Secure Boot private keys safe. The builder uses your existing `sbctl` keys to sign the ArchGuard ISO.
