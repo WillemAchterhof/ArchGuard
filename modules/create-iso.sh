@@ -7,6 +7,7 @@
 #
 # Responsibilities:
 #   - Prepare the ArchISO releng profile (stock, only renamed)
+#   - Configure the Secure Boot bootstrap to run in the root login on tty1
 #   - Build the ISO
 #   - Locate the resulting ISO
 #   - Sign the boot chain (boot loader, kernel, UEFI shell) with the ArchGuard
@@ -123,12 +124,14 @@ prepare_iso_profile(){
 
     sed -i \
         's|^iso_name=.*|iso_name="archguard"|' \
-        "$ISO_PROFILE/profiledef.sh"
+        "$ISO_PROFILE/profiledef.sh" \
+        || fatal "Failed to update ISO name."
 
     cat >> "$ISO_PROFILE/profiledef.sh" <<'EOF'
 
 # ArchGuard Secure Boot bootstrap
 file_permissions["/usr/local/bin/archguard-secure-boot.sh"]="0:0:755"
+file_permissions["/root/.bash_profile"]="0:0:644"
 EOF
 
     # ArchGuard Secure Boot tooling required inside the live ISO.
@@ -155,42 +158,50 @@ prepare_archguard_boot(){
 
     cp -- "$source" "$target" \
         || fatal "Failed to copy Secure Boot module."
+
+    chmod 0755 "$target" \
+        || fatal "Failed to set Secure Boot bootstrap permissions."
 }
 
 
-prepare_archguard_boot_service(){
-    local service="$ISO_PROFILE/airootfs/etc/systemd/system/archguard-secure-boot.service"
-    local wants="$ISO_PROFILE/airootfs/etc/systemd/system/multi-user.target.wants"
+# Launch the bootstrap from an interactive Bash login on tty1.
+#
+# This gives cryptsetup a real terminal for its LUKS passphrase prompt,
+# rather than running the bootstrap as a non-interactive systemd service.
+prepare_archguard_boot_login(){
+    msg "Configuring ArchGuard tty1 login..."
 
-    mkdir -p "$wants" \
-        || fatal "Failed to create systemd service directory."
+    local root_home="$ISO_PROFILE/airootfs/root"
+    local profile="$root_home/.bash_profile"
+    local marker="# ARCHGUARD_SECURE_BOOT_LOGIN"
 
-    cat > "$service" <<'EOF'
+    mkdir -p "$root_home" \
+        || fatal "Failed to create root home directory."
 
-[Unit]
-Description=ArchGuard Secure Boot Bootstrap
-After=archiso.target
-Wants=archiso.target
+    touch "$profile" \
+        || fatal "Failed to create root Bash profile."
 
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/archguard-secure-boot.sh
-StandardInput=tty
-StandardOutput=journal+console
-StandardError=journal+console
-TTYPath=/dev/tty1
-TTYReset=yes
-TTYVHangup=yes
-TTYVTDisallocate=yes
-RemainAfterExit=no
+    # Make this operation idempotent if the profile already contains our block.
+    if grep -Fqx "$marker" "$profile"; then
+        msg "ArchGuard login launch already configured."
+        return 0
+    fi
 
-[Install]
-WantedBy=multi-user.target
+    cat >> "$profile" <<'EOF'
+
+# ARCHGUARD_SECURE_BOOT_LOGIN
+# Run the Secure Boot bootstrap only in the first virtual terminal.
+if [[ "$(tty 2>/dev/null)" == "/dev/tty1" ]]; then
+    if [[ -x /usr/local/bin/archguard-secure-boot.sh ]]; then
+        exec /usr/local/bin/archguard-secure-boot.sh
+    else
+        printf '[FATAL] ArchGuard Secure Boot bootstrap not found or not executable.\n' >&2
+    fi
+fi
 EOF
 
-    ln -sf \
-        "../archguard-secure-boot.service" \
-        "$wants/archguard-secure-boot.service"
+    chmod 0644 "$profile" \
+        || fatal "Failed to set root Bash profile permissions."
 }
 
 
@@ -274,10 +285,6 @@ extract_iso_boot(){
 }
 
 
-# ==============================================================================
-# Profile Preparation
-# ==============================================================================
-
 prepare_signing_cert(){
     # Public certificate only: keep a local copy so sbsign/sbverify can use it
     # without privileges. The private key is never copied.
@@ -289,6 +296,7 @@ prepare_signing_cert(){
             || fatal "Failed to read signing certificate."
     fi
 }
+
 
 sign_iso_boot(){
     msg "Signing boot loader, kernel and UEFI shell..."
@@ -309,13 +317,14 @@ sign_iso_boot(){
 
         if (( ${#priv[@]} > 0 )); then
             sudo chown "$(id -u):$(id -g)" "$ISO_SIGN/$file" \
-                || fatal "Failed to restore ownership: $file"
+                || fatal "Failed to restore ownership: $ISO_SIGN/$file"
         fi
 
         sbverify --cert "$ISO_SB_CERT_LOCAL" "$ISO_SIGN/$file" >/dev/null \
             || fatal "Signature check failed: $file"
     done
 }
+
 
 update_iso_esp(){
     msg "Updating UEFI boot image..."
@@ -333,6 +342,7 @@ update_iso_esp(){
         || fatal "Failed to copy UEFI shell into UEFI boot image."
 }
 
+
 verify_iso_esp(){
     local path
     local check="$ISO_SIGN/check.efi"
@@ -349,6 +359,7 @@ verify_iso_esp(){
 
     rm -f -- "$check"
 }
+
 
 repack_iso(){
     msg "Repacking ISO..."
@@ -371,6 +382,7 @@ repack_iso(){
         || fatal "Failed to replace ISO with signed ISO."
 }
 
+
 verify_iso(){
     msg "Verifying signed ISO..."
 
@@ -390,6 +402,7 @@ verify_iso(){
             || fatal "Not signed inside ISO: $path"
     done
 }
+
 
 sign_iso(){
     extract_iso_boot
@@ -414,7 +427,7 @@ run_build_iso(){
     check_iso_requirements
     prepare_iso_profile
     prepare_archguard_boot
-    prepare_archguard_boot_service
+    prepare_archguard_boot_login
     build_iso
     find_iso
     sign_iso
