@@ -43,7 +43,7 @@
 # ==============================================================================
 
 readonly BACKUP_CONFIG_NAME="backup-configs"
-readonly BACKUP_CONFIG_FILE="$DIR_MAIN/configs/backup-file-paths.confa"
+readonly BACKUP_CONFIG_FILE="$DIR_MAIN/configs/backup-file-paths.conf"
 readonly BACKUP_LOCAL_ROOT="$HOME/Backup"
 readonly BACKUP_AGBOOT_LABEL="AGBOOT"
 readonly BACKUP_AGBOOT_DEFAULT_MOUNT="/run/archguard/agboot"
