@@ -142,44 +142,66 @@ backup_fatal(){
 }
 
 
+
 find_backup_destination() {
     local device
     local mountpoint
+    local mountpoint_output=""
+    local existing_mountpoint
     local -a devices=()
     local -a mountpoints=()
+    local -a unique_mountpoints=()
 
     BACKUP_ROOT=""
     BACKUP_AGBOOT_MOUNT=""
     BACKUP_AGBOOT_MOUNTED_BY_MODULE=0
     BACKUP_SUDO=()
 
-    # Find partitions labelled AGBOOT.
     mapfile -t devices < <(
         lsblk -rpn -o NAME,LABEL,TYPE |
             awk -v label="$BACKUP_AGBOOT_LABEL" \
                 '$2 == label && $3 == "part" { print $1 }'
     )
 
-    # If AGBOOT is unavailable, use the local backup destination.
     if (( ${#devices[@]} == 0 )); then
         warn "AGBOOT filesystem not found; using local backup destination."
         BACKUP_ROOT="$BACKUP_LOCAL_ROOT"
         return 0
     fi
 
-    # Refuse to guess if multiple partitions have the same label.
     (( ${#devices[@]} == 1 )) \
         || backup_fatal "Multiple partitions labelled AGBOOT found."
 
     device="${devices[0]}"
 
-    # Find existing mount points for the detected partition.
-    mapfile -t mountpoints < <(
-        findmnt -rn -S "$device" -o TARGET | awk '!seen[$0]++'
-    )
+    # A filesystem may have multiple mount points.
+    # Handle no matches without triggering the project's error handler.
+    if mountpoint_output=$(findmnt -rn -S "$device" -o TARGET 2>/dev/null); then
+        mapfile -t mountpoints <<< "$mountpoint_output"
+    else
+        mountpoints=()
+    fi
+
+    # Deduplicate mount points using Bash, not an awk pipeline.
+    for mountpoint in "${mountpoints[@]}"; do
+        [[ -n "$mountpoint" ]] || continue
+
+        existing_mountpoint=0
+        for existing in "${unique_mountpoints[@]}"; do
+            if [[ "$existing" == "$mountpoint" ]]; then
+                existing_mountpoint=1
+                break
+            fi
+        done
+
+        if (( existing_mountpoint == 0 )); then
+            unique_mountpoints+=("$mountpoint")
+        fi
+    done
+
+    mountpoints=("${unique_mountpoints[@]}")
 
     if (( ${#mountpoints[@]} > 0 )); then
-        # Prefer ArchGuard's standard mount point when available.
         for mountpoint in "${mountpoints[@]}"; do
             if [[ "$mountpoint" == "$BACKUP_AGBOOT_DEFAULT_MOUNT" ]]; then
                 BACKUP_AGBOOT_MOUNT="$mountpoint"
@@ -187,7 +209,6 @@ find_backup_destination() {
             fi
         done
 
-        # Otherwise, use the first existing mount point.
         if [[ -z "$BACKUP_AGBOOT_MOUNT" ]]; then
             BACKUP_AGBOOT_MOUNT="${mountpoints[0]}"
         fi
@@ -200,9 +221,7 @@ find_backup_destination() {
         fi
     else
         msg "AGBOOT found but is not mounted."
-        msg "Mounting AGBOOT at: $BACKUP_AGBOOT_DEFAULT_MOUNT"
 
-        # Do not mount over another filesystem.
         if mountpoint -q "$BACKUP_AGBOOT_DEFAULT_MOUNT"; then
             backup_fatal "The default AGBOOT mount point is already in use."
         fi
@@ -216,13 +235,10 @@ find_backup_destination() {
         BACKUP_AGBOOT_MOUNT="$BACKUP_AGBOOT_DEFAULT_MOUNT"
         BACKUP_AGBOOT_MOUNTED_BY_MODULE=1
 
-        # Unmount this module's mount if the script exits unexpectedly.
         trap 'backup_close_devices' EXIT
-
         success "AGBOOT mounted."
     fi
 
-    # Never write backups to the system root.
     [[ "$BACKUP_AGBOOT_MOUNT" != "/" ]] \
         || backup_fatal "Refusing to use the system root as the AGBOOT mount point."
 
