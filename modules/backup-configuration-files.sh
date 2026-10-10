@@ -53,7 +53,8 @@ BACKUP_ROOT=""
 BACKUP_AGBOOT_MOUNT=""
 BACKUP_AGBOOT_MOUNTED_BY_MODULE=0
 BACKUP_SUDO=()
-BACKUP_COPIED=()
+BACKUP_COPIED_SOURCES=()
+BACKUP_COPIED_TARGETS=()
 
 
 check_backup_requirements(){
@@ -305,30 +306,47 @@ copy_backup_path(){
 
 copy_configuration_files(){
     local name
+    local paths
     local source
     local target
 
-    BACKUP_COPIED=()
+    BACKUP_COPIED_SOURCES=()
+    BACKUP_COPIED_TARGETS=()
 
     msg "Starting configuration backup."
 
     for name in "${!BACKUP_PATHS[@]}"; do
-        source="${BACKUP_PATHS[$name]}"
-        target="$BACKUP_DIRECTORY/$name"
+        paths="${BACKUP_PATHS[$name]}"
 
-        if [[ ! -e "$source" ]]; then
-            warn "Configuration path not found; skipping: $source"
-            continue
-        fi
+        while IFS= read -r source; do
+            # Ignore empty lines.
+            [[ -n "$source" ]] || continue
 
-        msg "Backing up: $source"
+            # Skip missing paths individually.
+            if [[ ! -e "$source" && ! -L "$source" ]]; then
+                warn "Configuration path not found; skipping: $source"
+                continue
+            fi
 
-        copy_backup_path "$name" "$source" "$target"
+            # Preserve directory structure within the group.
+            if [[ -d "$source" ]]; then
+                target="$BACKUP_DIRECTORY/$name/$(basename "$source")"
+            else
+                target="$BACKUP_DIRECTORY/$name"
+            fi
 
-        BACKUP_COPIED+=("$name")
+            msg "Backing up: $source"
+
+            copy_backup_path "$name" "$source" "$target"
+
+            # Record each successfully copied source and destination.
+            BACKUP_COPIED_SOURCES+=("$source")
+            BACKUP_COPIED_TARGETS+=("$target")
+
+        done <<< "$paths"
     done
 
-    (( ${#BACKUP_COPIED[@]} > 0 )) \
+    (( ${#BACKUP_COPIED_SOURCES[@]} > 0 )) \
         || warn "No configuration paths were backed up."
 }
 
@@ -352,30 +370,30 @@ verify_backup_path(){
     fi
 }
 
-
 verify_configuration_backup(){
-    local name
+    local i
+    local source
+    local target
 
-    (( ${#BACKUP_COPIED[@]} > 0 )) || return 0
+    (( ${#BACKUP_COPIED_SOURCES[@]} > 0 )) || return 0
 
     msg "Verifying configuration backup..."
 
-    # Flush and drop caches so the comparison reads the copies back from the
-    # device instead of from memory.
-    sync
+    # Flush writes before verification.
+    sync || backup_fatal "Failed to flush filesystem changes."
 
     sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches' \
         || backup_fatal "Failed to drop caches before verification."
 
-    for name in "${BACKUP_COPIED[@]}"; do
-        verify_backup_path \
-            "${BACKUP_PATHS[$name]}" \
-            "$BACKUP_DIRECTORY/$name"
+    for i in "${!BACKUP_COPIED_SOURCES[@]}"; do
+        source="${BACKUP_COPIED_SOURCES[$i]}"
+        target="${BACKUP_COPIED_TARGETS[$i]}"
 
-        success "Backup verified: $name"
+        verify_backup_path "$source" "$target"
+
+        success "Backup verified: $source"
     done
 }
-
 
 close_backup_destination(){
     msg "Closing backup destination..."
