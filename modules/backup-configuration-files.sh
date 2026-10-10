@@ -319,6 +319,11 @@ copy_configuration_files(){
         paths="${BACKUP_PATHS[$name]}"
 
         while IFS= read -r source; do
+
+            # Remove leading and trailing whitespace.
+            source="${source#"${source%%[![:space:]]*}"}"
+            source="${source%"${source##*[![:space:]]}"}"
+
             # Ignore empty lines.
             [[ -n "$source" ]] || continue
 
