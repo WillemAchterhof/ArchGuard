@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 
 # ==============================================================================
@@ -8,29 +7,31 @@
 #
 # Responsibilities:
 #   - Validate the commands required for configuration backup
-#   - Load configured paths from configs/backup-configuration-files.sh
+#   - Load the configured paths from configs/backup-configuration-files.sh
 #   - Detect the AGBOOT filesystem and mount it when necessary
 #   - Fall back to ~/Backup when AGBOOT is unavailable
 #   - Replace the previous backup-configs directory with a fresh directory
 #   - Copy configured files and directories while preserving attributes
-#   - Verify copied files and directories against their sources
+#   - Verify the copied files and directories against the device
 #   - Unmount AGBOOT only if this module mounted it
 #
 # Required globals:
 #   DIR_MAIN
 #
 # Required functions:
-#   msg  success  warn  fatal  require_command  packages_install  cleanup
+#   msg  success  warn  fatal  require_command  cleanup
 #
 # Result:
 #   BACKUP_DIRECTORY -> location of the configuration backup
 #
 # Configuration:
 #   configs/backup-configuration-files.sh
-#   Must define BACKUP_PATHS using `declare -gA BACKUP_PATHS=(...)`.
+#   It must define the associative array with `declare -gA BACKUP_PATHS=(...)`.
+#   (-g is required: the file is sourced from inside a function, where a plain
+#   `declare -A` would create a function-local array that is empty afterwards.)
 #
 # Backup destination:
-#   AGBOOT: <AGBOOT mount point>/backup-configs
+#   AGBOOT: <AGBOOT mount point>/backup-configs   (written with sudo)
 #   Fallback: ~/Backup/backup-configs
 #
 # Notes:
@@ -38,7 +39,7 @@
 #   - Missing configured paths are skipped with a warning.
 #   - Copy or verification failures abort the backup.
 #   - AGBOOT is unmounted only if this module mounted it.
-#   - An EXIT trap closes module-mounted AGBOOT after unexpected failures.
+#   - An EXIT trap unmounts AGBOOT if the operation fails while in progress.
 # ==============================================================================
 
 readonly BACKUP_CONFIG_NAME="backup-configs"
@@ -54,20 +55,8 @@ BACKUP_AGBOOT_MOUNTED_BY_MODULE=0
 BACKUP_SUDO=()
 BACKUP_COPIED=()
 
-# ==============================================================================
-# Requirements
-# ==============================================================================
 
-install_backup_requirements() {
-    packages_install \
-        util-linux \
-        gawk \
-        coreutils \
-        diffutils
-}
-
-
-check_backup_requirements() {
+check_backup_requirements(){
     local command
 
     for command in \
@@ -82,51 +71,43 @@ check_backup_requirements() {
         diff \
         mkdir \
         rm \
-        awk \
-        sudo
+        awk
     do
         require_command "$command"
     done
 
     [[ -f "$BACKUP_CONFIG_FILE" ]] \
-        || fatal "Backup configuration not found: $BACKUP_CONFIG_FILE"
+        || fatal "Backup path configuration not found: $BACKUP_CONFIG_FILE"
 
     [[ -r "$BACKUP_CONFIG_FILE" ]] \
-        || fatal "Backup configuration is not readable: $BACKUP_CONFIG_FILE"
+        || fatal "Backup path configuration is not readable: $BACKUP_CONFIG_FILE"
 }
 
 
-# ==============================================================================
-# Load and Validate Backup Configuration
-# ==============================================================================
-
-load_backup_configuration() {
+load_backup_configuration(){
     # shellcheck disable=SC1090
     source "$BACKUP_CONFIG_FILE"
 }
 
 
-check_backup_configuration() {
-    local declaration
+# Runs after load_backup_configuration has returned, so a function-local
+# `declare -A` in the configuration file is detected (the array would be empty
+# here).
+check_backup_configuration(){
+    declare -p BACKUP_PATHS &>/dev/null \
+        || fatal "BACKUP_PATHS is not defined (the configuration file must use 'declare -gA')."
 
-    declaration="$(declare -p BACKUP_PATHS 2>/dev/null)" \
-        || fatal "BACKUP_PATHS is not defined in the configuration file."
-
-    [[ "$declaration" == "declare -A"* ]] \
+    [[ "$(declare -p BACKUP_PATHS 2>/dev/null)" == "declare -A"* ]] \
         || fatal "BACKUP_PATHS must be an associative array."
 
     (( ${#BACKUP_PATHS[@]} > 0 )) \
-        || fatal "BACKUP_PATHS is empty."
+        || fatal "BACKUP_PATHS is empty (the configuration file must use 'declare -gA')."
 }
 
 
-# ==============================================================================
-# AGBOOT Cleanup
-# ==============================================================================
-
-# Unmount AGBOOT only when this module mounted it.
+# Unmount AGBOOT, but only if this module mounted it.
 # Safe to call repeatedly, including from the EXIT trap.
-backup_close_devices() {
+backup_close_devices(){
     if (( BACKUP_AGBOOT_MOUNTED_BY_MODULE == 1 )); then
         if mountpoint -q "$BACKUP_AGBOOT_MOUNT" 2>/dev/null; then
             sudo sync \
@@ -136,26 +117,23 @@ backup_close_devices() {
                 || warn "Failed to unmount AGBOOT: $BACKUP_AGBOOT_MOUNT"
         fi
 
-        if ! mountpoint -q "$BACKUP_AGBOOT_MOUNT" 2>/dev/null; then
-            sudo rmdir "$BACKUP_AGBOOT_MOUNT" 2>/dev/null || true
-            BACKUP_AGBOOT_MOUNTED_BY_MODULE=0
-        else
-            warn "AGBOOT remains mounted: $BACKUP_AGBOOT_MOUNT"
-        fi
+        sudo rmdir "$BACKUP_AGBOOT_MOUNT" 2>/dev/null || true
+
+        BACKUP_AGBOOT_MOUNTED_BY_MODULE=0
     fi
 }
 
 
-backup_cleanup() {
+backup_cleanup(){
     backup_close_devices
     cleanup
 }
 
 
-backup_fatal() {
+backup_fatal(){
     local message="$1"
 
-    printf '[FATAL] %s\n' "$message" >&2
+    printf '[FATAL] %s\n' "$message"
 
     trap - EXIT
     backup_cleanup
@@ -164,11 +142,7 @@ backup_fatal() {
 }
 
 
-# ==============================================================================
-# Find Backup Destination
-# ==============================================================================
-
-find_backup_destination() {
+find_backup_destination(){
     local device
     local -a devices=()
     local -a mountpoints=()
@@ -196,9 +170,7 @@ find_backup_destination() {
 
     device="${devices[0]}"
 
-    mapfile -t mountpoints < <(
-        findmnt -rn -S "$device" -o TARGET
-    )
+    mapfile -t mountpoints < <(findmnt -rn -S "$device" -o TARGET)
 
     (( ${#mountpoints[@]} <= 1 )) \
         || backup_fatal "AGBOOT filesystem has multiple mount points."
@@ -206,44 +178,37 @@ find_backup_destination() {
     if (( ${#mountpoints[@]} == 1 )); then
         BACKUP_AGBOOT_MOUNT="${mountpoints[0]}"
 
-        [[ "$BACKUP_AGBOOT_MOUNT" != "/" ]] \
-            || backup_fatal "Refusing to use the system root as the AGBOOT mount point."
-
         msg "AGBOOT is already mounted at: $BACKUP_AGBOOT_MOUNT"
     else
-        BACKUP_AGBOOT_MOUNT="$BACKUP_AGBOOT_DEFAULT_MOUNT"
-
         msg "AGBOOT found but is not mounted."
-        msg "Mounting AGBOOT at: $BACKUP_AGBOOT_MOUNT"
+        msg "Mounting AGBOOT at: $BACKUP_AGBOOT_DEFAULT_MOUNT"
 
-        sudo mkdir -p -- "$BACKUP_AGBOOT_MOUNT" \
+        sudo mkdir -p -- "$BACKUP_AGBOOT_DEFAULT_MOUNT" \
             || backup_fatal "Failed to create AGBOOT mount point."
 
-        sudo mount "$device" "$BACKUP_AGBOOT_MOUNT" \
+        sudo mount "$device" "$BACKUP_AGBOOT_DEFAULT_MOUNT" \
             || backup_fatal "Failed to mount AGBOOT."
 
+        BACKUP_AGBOOT_MOUNT="$BACKUP_AGBOOT_DEFAULT_MOUNT"
         BACKUP_AGBOOT_MOUNTED_BY_MODULE=1
 
-        # Close AGBOOT if an unexpected exit occurs.
+        # From here on, never leave a module-mounted AGBOOT mounted if the
+        # run fails outside backup_fatal.
         trap 'backup_close_devices' EXIT
 
-        success "AGBOOT mounted successfully."
+        success "AGBOOT mounted."
     fi
 
-    # AGBOOT may be root-owned, so destination operations use sudo.
+    # The root of a freshly formatted ext4 filesystem is owned by root.
     BACKUP_ROOT="$BACKUP_AGBOOT_MOUNT"
     BACKUP_SUDO=(sudo)
 }
 
 
-# ==============================================================================
-# Prepare Backup Directory
-# ==============================================================================
-
-prepare_backup_directory() {
+prepare_backup_directory(){
     BACKUP_DIRECTORY="$BACKUP_ROOT/$BACKUP_CONFIG_NAME"
 
-    # Refuse unexpected destinations before removing existing data.
+    # Refuse unexpected destination paths before removing existing data.
     [[ "$BACKUP_DIRECTORY" == "$BACKUP_LOCAL_ROOT/$BACKUP_CONFIG_NAME" ||
        ( -n "$BACKUP_AGBOOT_MOUNT" &&
          "$BACKUP_DIRECTORY" == "$BACKUP_AGBOOT_MOUNT/$BACKUP_CONFIG_NAME" ) ]] \
@@ -259,7 +224,7 @@ prepare_backup_directory() {
     msg "Creating backup directory: $BACKUP_DIRECTORY"
 
     "${BACKUP_SUDO[@]}" mkdir -p -- "$BACKUP_DIRECTORY" \
-        || backup_fatal "Failed to create backup directory."
+        || backup_fatal "Failed to create backup directory: $BACKUP_DIRECTORY"
 
     [[ -d "$BACKUP_DIRECTORY" && ! -L "$BACKUP_DIRECTORY" ]] \
         || backup_fatal "Backup destination is not a valid directory."
@@ -268,33 +233,27 @@ prepare_backup_directory() {
 }
 
 
-# ==============================================================================
-# Copy Configuration Paths
-# ==============================================================================
-
-copy_backup_path() {
+copy_backup_path(){
     local name="$1"
     local source="$2"
     local target="$3"
-    local -a copy_priv=("${BACKUP_SUDO[@]}")
+    local -a priv=("${BACKUP_SUDO[@]}")
 
-    # Escalate only when the source requires elevated read permissions.
-    if [[ ! -r "$source" ]] ||
-       { [[ -d "$source" ]] && [[ ! -x "$source" ]]; }; then
-        copy_priv=(sudo)
+    # Protected sources need root as well.
+    if [[ ! -r "$source" ]] || { [[ -d "$source" ]] && [[ ! -x "$source" ]]; }; then
+        priv=(sudo)
     fi
 
-    # Keep local destination directories owned by the user when possible.
-    "${BACKUP_SUDO[@]}" mkdir -p -- "$target" \
+    "${priv[@]}" mkdir -p -- "$target" \
         || backup_fatal "Failed to create backup target: $target"
 
     if [[ -d "$source" ]]; then
-        "${copy_priv[@]}" cp -a -- "$source/." "$target/" \
+        "${priv[@]}" cp -a -- "$source/." "$target/" \
             || backup_fatal "Failed to copy directory: $source"
 
         success "Directory backed up: $name"
     else
-        "${copy_priv[@]}" cp -a -- "$source" "$target/" \
+        "${priv[@]}" cp -a -- "$source" "$target/" \
             || backup_fatal "Failed to copy file: $source"
 
         success "File backed up: $name"
@@ -302,7 +261,7 @@ copy_backup_path() {
 }
 
 
-copy_configuration_files() {
+copy_configuration_files(){
     local name
     local source
     local target
@@ -315,7 +274,7 @@ copy_configuration_files() {
         source="${BACKUP_PATHS[$name]}"
         target="$BACKUP_DIRECTORY/$name"
 
-        if [[ ! -e "$source" && ! -L "$source" ]]; then
+        if [[ ! -e "$source" ]]; then
             warn "Configuration path not found; skipping: $source"
             continue
         fi
@@ -327,61 +286,44 @@ copy_configuration_files() {
         BACKUP_COPIED+=("$name")
     done
 
-    if (( ${#BACKUP_COPIED[@]} == 0 )); then
-        warn "No configuration paths were backed up."
-    fi
+    (( ${#BACKUP_COPIED[@]} > 0 )) \
+        || warn "No configuration paths were backed up."
 }
 
 
-# ==============================================================================
-# Verify Backup
-# ==============================================================================
-
-verify_backup_path() {
+verify_backup_path(){
     local source="$1"
     local target="$2"
-    local -a verify_priv=("${BACKUP_SUDO[@]}")
-
-    # Protected source paths may need elevated read permissions.
-    if [[ ! -r "$source" ]] ||
-       { [[ -d "$source" ]] && [[ ! -x "$source" ]]; }; then
-        verify_priv=(sudo)
-    fi
 
     if [[ -d "$source" ]]; then
         [[ -d "$target" ]] \
             || backup_fatal "Backup directory verification failed: $target"
 
-        "${verify_priv[@]}" diff -qr -- "$source" "$target" >/dev/null \
+        sudo diff -qr --no-dereference "$source" "$target" >/dev/null \
             || backup_fatal "Backup directory contents differ: $source"
-    elif [[ -L "$source" ]]; then
-        [[ -L "$target/$(basename "$source")" ]] \
-            || backup_fatal "Backup symlink verification failed: $source"
-
-        [[ "$(readlink -- "$source")" == \
-           "$(readlink -- "$target/$(basename "$source")")" ]] \
-            || backup_fatal "Backup symlink target differs: $source"
     else
         [[ -f "$target/$(basename "$source")" ]] \
             || backup_fatal "Backup file verification failed: $target"
 
-        "${verify_priv[@]}" cmp -s -- \
-            "$source" "$target/$(basename "$source")" \
+        sudo cmp -s -- "$source" "$target/$(basename "$source")" \
             || backup_fatal "Backup file contents differ: $source"
     fi
 }
 
 
-verify_configuration_backup() {
+verify_configuration_backup(){
     local name
 
     (( ${#BACKUP_COPIED[@]} > 0 )) || return 0
 
-    msg "Flushing filesystem changes before verification."
+    msg "Verifying configuration backup..."
 
-    sync || backup_fatal "Failed to flush filesystem changes."
+    # Flush and drop caches so the comparison reads the copies back from the
+    # device instead of from memory.
+    sync
 
-    msg "Verifying configuration backup."
+    sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches' \
+        || backup_fatal "Failed to drop caches before verification."
 
     for name in "${BACKUP_COPIED[@]}"; do
         verify_backup_path \
@@ -393,34 +335,22 @@ verify_configuration_backup() {
 }
 
 
-# ==============================================================================
-# Close Backup Destination
-# ==============================================================================
-
-close_backup_destination() {
-    msg "Closing backup destination."
+close_backup_destination(){
+    msg "Closing backup destination..."
 
     backup_close_devices
 
-    if (( BACKUP_AGBOOT_MOUNTED_BY_MODULE == 1 )); then
-        backup_fatal "Unable to safely close AGBOOT."
-    fi
-
+    # Resources were closed successfully; disable the EXIT trap.
     trap - EXIT
 
     BACKUP_AGBOOT_MOUNT=""
+
     success "Backup destination closed."
 }
 
 
-# ==============================================================================
-# Main Backup Function
-# ==============================================================================
-
-backup_configuration_files() {
+backup_configuration_files(){
     check_backup_requirements
-    install_backup_requirements
-
     load_backup_configuration
     check_backup_configuration
 
