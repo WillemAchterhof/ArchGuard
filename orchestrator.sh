@@ -54,7 +54,7 @@ main(){
     run_create_usb || fatal "USB creation failed."
     create_key_storage
     create_boot_storage
-    # backup_configuration_files
+    backup_configuration_files
     cleanup
 }
 
