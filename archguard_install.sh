@@ -43,9 +43,6 @@ fatal() {
     exit 1
 }
 
-# Export shared functions so the Bash orchestrator can reuse them.
-export -f msg success warn fatal
-
 # ------------------------------------------------------------------------------
 # Cleanup and error handling
 # ------------------------------------------------------------------------------
@@ -126,7 +123,7 @@ trap 'cleanup || true' EXIT
 # ------------------------------------------------------------------------------
 
 init_variables() {
-    readonly REPO_URL="https://github.com/WillemAchterhof/archguard-install.git"
+    readonly REPO_URL="https://github.com/WillemAchterhof/archguard.git"
     readonly REPO_BRANCH="main"
 
     # Entry point inside the cloned repository.
@@ -144,9 +141,6 @@ init_variables() {
     WIFI_DEVICE=""
     WIFI_SSID=""
     AGS_WIFI_PASSWORD=""
-
-    # The orchestrator can read this path, but the bootstrap never modifies it.
-    export DIR_BACKUP
 }
 
 # ------------------------------------------------------------------------------
@@ -351,7 +345,7 @@ handoff() {
     success "Starting ArchGuard orchestrator..."
 
     # The orchestrator should define its own traps and cleanup routine.
-    exec bash "$orchestrator" "$@"
+    bash "$orchestrator" "$@"
 }
 
 # ------------------------------------------------------------------------------
