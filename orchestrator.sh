@@ -1,8 +1,9 @@
+
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
 # ==============================================================================
-#  ArchGuard USB Builder - Orchestrator
+# ArchGuard USB Builder - Orchestrator
 # ==============================================================================
 # /orchestrator.sh
 
@@ -15,6 +16,9 @@ DIR_MAIN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIR_LIB="$DIR_MAIN/lib"
 DIR_MODULES="$DIR_MAIN/modules"
 
+# Global state
+AG_USB_DISK=""
+
 # ==============================================================================
 # Global Libraries
 # ==============================================================================
@@ -23,7 +27,13 @@ source "$DIR_LIB/logging.sh"
 source "$DIR_LIB/common.sh"
 source "$DIR_LIB/errors.sh"
 
+# ==============================================================================
+# Error Handling
+# ==============================================================================
+
 trap 'trap_err' ERR
+trap 'trap_int' INT TERM
+trap 'cleanup' EXIT
 
 # ==============================================================================
 # Modules
@@ -35,8 +45,13 @@ source "$DIR_MODULES/select-disk.sh"
 # Main
 # ==============================================================================
 
-main(){    
-    cleanup
+main() {
+
+    # First operation: select USB disk.
+    run_select_disk
+
+    # Further operations will follow.
+
 }
 
 main "$@"
