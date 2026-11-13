@@ -48,7 +48,7 @@ source "$DIR_MODULES/select-disk.sh"
 main() {
 
     # First operation: select USB disk.
-    run_select_disk
+    run_disk
 
     # Further operations will follow.
 
