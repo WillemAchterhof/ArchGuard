@@ -6,24 +6,55 @@
 # ==============================================================================
 # /lib/errors.sh
 
-fatal() {
+# ==============================================================================
+# FATAL ERROR
+# ==============================================================================
+
+fatal()
+{
     local message="${1:-Unknown error}"
 
     trap - ERR
 
     printf '[FATAL] %s\n' "$message" >&2
 
-    cleanup || true
     exit 1
 }
 
-trap_err() {
+# ==============================================================================
+# ERROR TRAP
+# ==============================================================================
+
+trap_err()
+{
     local exit_code=$?
 
     trap - ERR
 
-    printf '[FATAL] Command failed (exit %s).\n' "$exit_code" >&2
+    printf '[FATAL] Command failed (exit %s).\n' \
+        "$exit_code" >&2
 
-    cleanup || true
     exit "$exit_code"
+}
+
+# ==============================================================================
+# INTERRUPT TRAP
+# ==============================================================================
+
+trap_int()
+{
+    local signal="${1:-INT}"
+
+    trap - INT TERM
+
+    case "$signal" in
+        TERM)
+            printf '\n[!] Installation terminated.\n' >&2
+            exit 143
+            ;;
+        *)
+            printf '\n[!] Installation interrupted.\n' >&2
+            exit 130
+            ;;
+    esac
 }
