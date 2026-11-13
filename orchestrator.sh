@@ -45,13 +45,15 @@ source "$DIR_MODULES/select-disk.sh"
 # Main
 # ==============================================================================
 
-main() {
+main()
+{
+    if ! run_disk; then
+        printf "\n Installation cancelled. Returning to Arch live environment.\n"
+        cleanup
+        exit 0
+    fi
 
-    # First operation: select USB disk.
-    run_disk
-
-    # Further operations will follow.
-
+    # Continue installation...
 }
 
 main "$@"
