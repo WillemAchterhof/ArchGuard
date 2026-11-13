@@ -19,8 +19,9 @@ build_disk_map()
     local installer_disk="${AG_HW_USB_DEVICE:-}"
 
     local installer_real=""
+    
     if [[ -n "$installer_disk" ]]; then
-        installer_real="$(readlink -f "$installer_disk" 2>/dev/null || true)"
+        installer_real="$(get_parent_disk "$installer_disk" 2>/dev/null || true)"
     fi
 
     while IFS= read -r disk; do
@@ -30,8 +31,8 @@ build_disk_map()
         # Exclude the installer USB.
         if [[ -n "$installer_real" ]]; then
             local disk_real
-            disk_real="$(readlink -f "$disk" 2>/dev/null || true)"
-
+            disk_real="$(get_parent_disk "$disk" 2>/dev/null || true)"
+            
             [[ "$disk_real" == "$installer_real" ]] && continue
         fi
 
@@ -189,12 +190,11 @@ select_disk()
         return 1
     fi
 
-    selected_real="$(readlink -f "$selected" 2>/dev/null || true)"
+    selected_real="$(get_parent_disk "$selected" 2>/dev/null || true)"
 
-    # Additional protection against selecting the installer USB.
     if [[ -n "${AG_HW_USB_DEVICE:-}" ]]; then
-        installer_real="$(readlink -f "$AG_HW_USB_DEVICE" 2>/dev/null || true)"
-
+        installer_real="$(get_parent_disk "$AG_HW_USB_DEVICE" 2>/dev/null || true)"
+    
         if [[ -n "$installer_real" &&
               "$selected_real" == "$installer_real" ]]; then
             printf " Cannot select the installer USB: %s\n" "$selected"
