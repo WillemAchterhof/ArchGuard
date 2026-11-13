@@ -8,6 +8,7 @@
 # 1. DISK DISCOVERY — map.sh
 # ==============================================================================
 
+
 build_disk_map()
 {
     declare -gA DISK_MAP
@@ -15,22 +16,38 @@ build_disk_map()
 
     local index=1
     local disk
+    local disk_real
     local installer_disk="${AG_HW_USB_DEVICE:-}"
     local installer_real=""
 
+    # Resolve installer USB to its physical parent disk.
     if [[ -n "$installer_disk" ]]; then
+
         installer_real="$(get_parent_disk "$installer_disk" 2>/dev/null || true)"
+
+        if [[ -z "$installer_real" ]]; then
+            warn "Cannot identify installer USB: $installer_disk"
+            warn "Disk selection aborted for safety."
+            return 1
+        fi
+
+        msg "Installer USB detected: $installer_real"
+    else
+        warn "AG_HW_USB_DEVICE is not set."
+        warn "Installer USB cannot be excluded."
+        return 1
     fi
 
+    # Discover available physical disks.
     while IFS= read -r disk; do
 
         [[ -n "$disk" ]] || continue
 
-        if [[ -n "$installer_real" ]]; then
-            local disk_real
-            disk_real="$(get_parent_disk "$disk" 2>/dev/null || true)"
+        disk_real="$(get_parent_disk "$disk" 2>/dev/null || true)"
 
-            [[ "$disk_real" == "$installer_real" ]] && continue
+        # Exclude installer USB and all its partitions.
+        if [[ "$disk_real" == "$installer_real" ]]; then
+            continue
         fi
 
         DISK_MAP["$index"]="$disk"
@@ -38,8 +55,10 @@ build_disk_map()
 
     done < <(
         lsblk -dnpo NAME,TYPE |
-        awk '$2 == "disk" { print $1 }'
+            awk '$2 == "disk" { print $1 }'
     )
+
+    return 0
 }
 
 # ==============================================================================
@@ -161,7 +180,7 @@ select_disk()
     local choice="$1"
     local selected
     local selected_real
-    local installer_real=""
+    local installer_real
 
     if [[ ! "$choice" =~ ^[1-9][0-9]*$ ]] ||
        [[ ! -v "DISK_MAP[$choice]" ]]; then
@@ -171,22 +190,22 @@ select_disk()
 
     selected="${DISK_MAP[$choice]}"
 
-    # Confirm that the selected device still exists.
     if [[ ! -b "$selected" ]]; then
         printf " Invalid block device.\n"
         return 1
     fi
 
     selected_real="$(get_parent_disk "$selected" 2>/dev/null || true)"
+    installer_real="$(get_parent_disk "${AG_HW_USB_DEVICE:-}" 2>/dev/null || true)"
 
-    if [[ -n "${AG_HW_USB_DEVICE:-}" ]]; then
-        installer_real="$(get_parent_disk "$AG_HW_USB_DEVICE" 2>/dev/null || true)"
-    
-        if [[ -n "$installer_real" &&
-              "$selected_real" == "$installer_real" ]]; then
-            printf " Cannot select the installer USB: %s\n" "$selected"
-            return 1
-        fi
+    if [[ -z "$selected_real" || -z "$installer_real" ]]; then
+        warn "Unable to verify selected disk or installer USB."
+        return 1
+    fi
+
+    if [[ "$selected_real" == "$installer_real" ]]; then
+        printf " Cannot select installer USB: %s\n" "$selected"
+        return 1
     fi
 
     # Commit selection.
@@ -207,7 +226,11 @@ run_disk()
 
     while true; do
 
-        build_disk_map
+        if ! build_disk_map; then
+            printf "\n Unable to safely identify installer USB.\n"
+            printf " Returning to Arch live environment.\n"
+            return 1
+        fi
 
         clear || true
         render_disk_menu
