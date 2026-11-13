@@ -13,13 +13,11 @@ build_disk_map()
     declare -gA DISK_MAP
     DISK_MAP=()
 
-    local letters=( {a..z} )
-    local index=0
+    local index=1
     local disk
     local installer_disk="${AG_HW_USB_DEVICE:-}"
-
     local installer_real=""
-    
+
     if [[ -n "$installer_disk" ]]; then
         installer_real="$(get_parent_disk "$installer_disk" 2>/dev/null || true)"
     fi
@@ -28,21 +26,14 @@ build_disk_map()
 
         [[ -n "$disk" ]] || continue
 
-        # Exclude the installer USB.
         if [[ -n "$installer_real" ]]; then
             local disk_real
             disk_real="$(get_parent_disk "$disk" 2>/dev/null || true)"
-            
+
             [[ "$disk_real" == "$installer_real" ]] && continue
         fi
 
-        # The menu currently supports 26 selectable disks.
-        if (( index >= ${#letters[@]} )); then
-            warn "More than 26 disks detected. Additional disks were omitted."
-            break
-        fi
-
-        DISK_MAP["${letters[$index]}"]="$disk"
+        DISK_MAP["$index"]="$disk"
         index=$((index + 1))
 
     done < <(
@@ -145,7 +136,7 @@ display_disks()
     local size
     local model
 
-    for key in $(printf '%s\n' "${!DISK_MAP[@]}" | sort); do
+    for key in $(printf '%s\n' "${!DISK_MAP[@]}" | sort -n); do
 
         disk="${DISK_MAP[$key]}"
 
@@ -153,10 +144,7 @@ display_disks()
         model="$(lsblk -dnro MODEL "$disk" 2>/dev/null | xargs)"
 
         printf " [%s] %-15s %-10s %s\n" \
-            "$key" \
-            "$disk" \
-            "${size:--}" \
-            "${model:--}"
+            "$key" "$disk" "${size:--}" "${model:--}"
 
         display_partitions "$disk"
 
@@ -175,8 +163,7 @@ select_disk()
     local selected_real
     local installer_real=""
 
-    # Only accept the menu's single-letter keys.
-    if [[ ! "$choice" =~ ^[a-z]$ ]] ||
+    if [[ ! "$choice" =~ ^[1-9][0-9]*$ ]] ||
        [[ ! -v "DISK_MAP[$choice]" ]]; then
         printf " Invalid selection.\n"
         return 1
@@ -226,40 +213,26 @@ run_disk()
         render_disk_menu
 
         if [[ "${#DISK_MAP[@]}" -eq 0 ]]; then
-            printf " No usable disks found.\n\n"
-            printf " Press any key to return..."
-
-            read -r -n1 -s || true
-            printf "\n"
-
+            printf " No usable installation disks found.\n\n"
+            printf " Returning to Arch live environment.\n"
             return 1
         fi
 
         display_disks
 
         printf "\n"
-        printf " [z] Return\n\n"
-        printf " Select a disk: "
+        printf " Select a disk number: "
 
-        if ! read -r -n1 -s choice; then
-            printf "\n"
+        if ! read -r choice; then
+            printf "\n Disk selection interrupted.\n"
             return 1
         fi
 
-        printf "\n"
+        if select_disk "$choice"; then
+            return 0
+        fi
 
-        case "$choice" in
-            z|Z)
-                return 1
-                ;;
-            *)
-                if select_disk "$choice"; then
-                    return 0
-                fi
-
-                sleep 1
-                ;;
-        esac
+        sleep 1
 
     done
 }
