@@ -25,6 +25,7 @@ AG_P_DISK=""
 
 source "$DIR_LIB/logging.sh"
 source "$DIR_LIB/common.sh"
+source "$DIR_LIB/storage-detection.sh"
 source "$DIR_LIB/errors.sh"
 
 # ==============================================================================
@@ -46,14 +47,21 @@ source "$DIR_MODULES/select-disk.sh"
 # Main
 # ==============================================================================
 
+
 main()
 {
-    require_command lsblk
+    # Detect available storage devices.
+    if ! detect_storage; then
+        fatal "Storage detection failed. Cannot safely continue."
+    fi
 
+    # Select installation disk.
     if ! run_disk; then
         printf "\n Installation cancelled. Returning to Arch live environment.\n"
         return 0
     fi
+
+    msg "Installation target: $AG_P_DISK"
 
     # Continue installation...
 }
