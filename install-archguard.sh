@@ -15,12 +15,16 @@ set -Eeuo pipefail
 init_variables() {
     readonly GIT_URL="https://github.com/WillemAchterhof/archguard.git"
     readonly GIT_BRANCH="version-one"
-    readonly DIR_BASE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+
+    DIR_BASE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+    readonly DIR_BASE
+
     readonly DIR_PROJECT="$DIR_BASE/archguard"
-    
     readonly DIR_ORCHESTRATOR="orchestrator"
     readonly FILE_ORCHESTRATOR="launch-orchestrator.sh"
     readonly REL_ORCHESTRATOR="$DIR_ORCHESTRATOR/$FILE_ORCHESTRATOR"
+
+    export GIT_TERMINAL_PROMPT=0
 
     DIR_STAGING=""
     DIR_BACKUP=""
@@ -104,18 +108,14 @@ check_requirements() {
         command -v "$required_command" >/dev/null 2>&1 || \
             fatal "Required command not found: $required_command"
     done
-    
+
     [[ -w "$DIR_BASE" ]] || \
         fatal "Project directory is not writable: $DIR_BASE"
 }
 
-# ------------------------------------------------------------------------------
-# Internet
-# ------------------------------------------------------------------------------
-
 check_internet_connectivity() {
-    git ls-remote --heads "$GIT_URL" >/dev/null 2>&1 || \
-        fatal "Cannot reach $GIT_URL — check your connection."
+    git ls-remote --exit-code --heads "$GIT_URL" "$GIT_BRANCH" >/dev/null 2>&1 || \
+        fatal "Cannot reach $GIT_URL or branch '$GIT_BRANCH' does not exist."
 }
 
 # ==============================================================================
@@ -125,7 +125,7 @@ check_internet_connectivity() {
 download_project() {
     local staging_project
 
-    msg "Downloading ArchGuard USB Builder ($GIT_BRANCH)..."
+    msg "Downloading ArchGuard ($GIT_BRANCH)..."
 
     DIR_STAGING="$(mktemp -d "$DIR_BASE/.archguard.XXXXXX")" || \
         fatal "Could not create a temporary download directory."
@@ -134,7 +134,7 @@ download_project() {
 
     if ! git clone --branch "$GIT_BRANCH" --depth 1 \
         "$GIT_URL" "$staging_project"; then
-        fatal "Could not download the selected ArchGuard USB Builder release."
+        fatal "Could not download the selected ArchGuard release."
     fi
 
     validate_project "$staging_project"
@@ -188,10 +188,20 @@ promote_staged_project() {
     fi
 }
 
+validate_project() {
+    local project_dir=$1
+    local orchestrator="$project_dir/$REL_ORCHESTRATOR"
+
+    [[ -f "$orchestrator" ]] || \
+        fatal "Orchestrator launcher not found: $orchestrator"
+    bash -n "$orchestrator" || \
+        fatal "Orchestrator has a Bash syntax error."
+}
+
 activate_project() {
     local staging_project="$DIR_STAGING/project"
 
-    msg "Activating ArchGuard USB Builder..."
+    msg "Activating ArchGuard..."
 
     # mv DIR_PROJECT → DIR_BACKUP, sets DIR_BACKUP
     backup_current_project
@@ -203,24 +213,14 @@ activate_project() {
     discard_previous_backup
 
     # exec in handoff skips the EXIT trap, so remove staging here.
-    [[ -n "$DIR_STAGING" && -d "$DIR_STAGING" ]] || return 0
-    rmdir -- "$DIR_STAGING" 2>/dev/null || true
-    DIR_STAGING=""
+    if rmdir -- "$DIR_STAGING" 2>/dev/null; then
+        DIR_STAGING=""
+    fi
 }
 
 # ==============================================================================
 # Handoff
 # ==============================================================================
-
-validate_project() {
-    local project_dir=$1
-    local orchestrator="$project_dir/$REL_ORCHESTRATOR"
-
-    [[ -f "$orchestrator" ]] || \
-        fatal "Orchestrator launcher not found: $orchestrator"
-    bash -n "$orchestrator" || \
-        fatal "Orchestrator has a Bash syntax error."
-}
 
 handoff() {
     local orchestrator="$DIR_PROJECT/$REL_ORCHESTRATOR"
@@ -228,7 +228,7 @@ handoff() {
     [[ -f "$orchestrator" ]] || \
         fatal "Orchestrator not found: $orchestrator"
 
-    msg "Starting ArchGuard USB Builder..."
+    msg "Starting ArchGuard..."
     export DIR_PROJECT
     exec bash "$orchestrator" "$@"
 }
