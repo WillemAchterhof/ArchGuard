@@ -84,7 +84,7 @@ check_requirements() {
     done
     
     [[ -w "$DIR_BASE" ]] || \
-    fatal "Project directory is not writable: $DIR_BASE"
+        fatal "Project directory is not writable: $DIR_BASE"
 }
 
 check_sudo() {
