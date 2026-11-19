@@ -17,7 +17,10 @@ init_variables() {
     readonly GIT_BRANCH="v0.1"
     readonly DIR_BASE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
     readonly DIR_PROJECT="$DIR_BASE/archguard-usb-builder"
-    readonly FILE_ORCHESTRATOR="orchestrator.sh"
+    
+    readonly DIR_ORCHESTRATOR="orchestrator"
+    readonly FILE_ORCHESTRATOR="orchestrator-launch.sh"
+    readonly PATH_ORCHESTRATOR="$DIR_ORCHESTRATOR/$FILE_ORCHESTRATOR"
 
     DIR_STAGING=""
     DIR_BACKUP=""
@@ -116,7 +119,7 @@ download_project() {
 
 validate_project() {
     local project_dir=$1
-    local orchestrator="$project_dir/$FILE_ORCHESTRATOR"
+    local orchestrator="$project_dir/$PATH_ORCHESTRATOR"
 
     msg "Validating downloaded project..."
 
@@ -182,7 +185,7 @@ activate_project() {
 # ==============================================================================
 
 handoff() {
-    local orchestrator="$DIR_PROJECT/$FILE_ORCHESTRATOR"
+    local orchestrator="$DIR_PROJECT/$PATH_ORCHESTRATOR"
 
     [[ -f "$orchestrator" ]] || \
         fatal "USB Builder orchestrator not found: $orchestrator"
