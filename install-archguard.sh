@@ -6,7 +6,7 @@ set -Eeuo pipefail
 # ==============================================================================
 # /install-archguard.sh
 #
-# Downloads the selected USB Builder release and starts its orchestrator.
+# Downloads the selected ArchGuard release and starts its orchestrator.
 
 # ==============================================================================
 # Initialization
@@ -19,8 +19,8 @@ init_variables() {
     readonly DIR_PROJECT="$DIR_BASE/archguard"
     
     readonly DIR_ORCHESTRATOR="orchestrator"
-    readonly FILE_ORCHESTRATOR="orchestrator-launch.sh"
-    readonly PATH_ORCHESTRATOR="$DIR_ORCHESTRATOR/$FILE_ORCHESTRATOR"
+    readonly FILE_ORCHESTRATOR="launch-orchestrator.sh"
+    readonly REL_ORCHESTRATOR="$DIR_ORCHESTRATOR/$FILE_ORCHESTRATOR"
 
     DIR_STAGING=""
     DIR_BACKUP=""
@@ -57,19 +57,38 @@ trap_err() {
     exit "$exit_code"
 }
 
+# ==============================================================================
+# Clean Up
+# ==============================================================================
+
+restore_previous_project() {
+    # Nothing to do on a fresh install.
+    [[ -n "$DIR_BACKUP" && -d "$DIR_BACKUP" ]] || return 0
+
+    # Target must be empty, or restoring would clobber the new project.
+    if [[ -e "$DIR_PROJECT" ]]; then
+        warn "New project exists; leaving backup in place: $DIR_BACKUP"
+        return 0
+    fi
+
+    if mv -- "$DIR_BACKUP" "$DIR_PROJECT"; then
+        msg "Restored previous project."
+        DIR_BACKUP=""
+    else
+        warn "Could not restore the previous project from: $DIR_BACKUP"
+    fi
+}
+
+remove_staging() {
+    [[ -n "$DIR_STAGING" && -d "$DIR_STAGING" ]] || return 0
+    rm -rf -- "$DIR_STAGING"
+}
+
 cleanup() {
     local exit_code=$?
 
-    # Restore the previous project if activation was interrupted midway.
-    if [[ -n "${DIR_BACKUP:-}" && -d "$DIR_BACKUP" && ! -e "${DIR_PROJECT:-}" ]]; then
-        mv -- "$DIR_BACKUP" "$DIR_PROJECT" 2>/dev/null || \
-            warn "Could not restore the previous project from: $DIR_BACKUP"
-    fi
-
-    # Staging only ever holds a fresh, user-owned clone: no sudo needed.
-    if [[ -n "${DIR_STAGING:-}" && -d "$DIR_STAGING" ]]; then
-        rm -rf -- "$DIR_STAGING"
-    fi
+    restore_previous_project
+    remove_staging
 
     return "$exit_code"
 }
@@ -81,7 +100,7 @@ cleanup() {
 check_requirements() {
     local required_command
 
-    for required_command in git sudo; do
+    for required_command in git; do
         command -v "$required_command" >/dev/null 2>&1 || \
             fatal "Required command not found: $required_command"
     done
@@ -90,9 +109,13 @@ check_requirements() {
         fatal "Project directory is not writable: $DIR_BASE"
 }
 
-check_sudo() {
-    msg "Requesting administrator privileges..."
-    sudo -v || fatal "Failed to authenticate with sudo."
+# ------------------------------------------------------------------------------
+# Internet
+# ------------------------------------------------------------------------------
+
+check_internet_connectivity() {
+    git ls-remote --heads "$GIT_URL" >/dev/null 2>&1 || \
+        fatal "Cannot reach $GIT_URL — check your connection."
 }
 
 # ==============================================================================
@@ -117,32 +140,24 @@ download_project() {
     validate_project "$staging_project"
 }
 
-validate_project() {
-    local project_dir=$1
-    local orchestrator="$project_dir/$PATH_ORCHESTRATOR"
-
-    msg "Validating downloaded project..."
-
-    [[ -f "$orchestrator" ]] || \
-        fatal "USB Builder orchestrator not found: $orchestrator"
-    [[ -d "$project_dir/lib" ]] || \
-        fatal "USB Builder library directory is missing."
-    [[ -d "$project_dir/modules" ]] || \
-        fatal "USB Builder modules directory is missing."
-
-    if ! bash -n "$orchestrator"; then
-        fatal "The downloaded orchestrator contains a Bash syntax error."
-    fi
-
-    chmod 0755 "$orchestrator" || \
-        fatal "Could not make the orchestrator executable."
+purge_leftover_backups() {
+    # Backups from previously interrupted runs never had their owner come back.
+    local leftover
+    for leftover in "$DIR_BASE"/.archguard.previous.*; do
+        [[ -e "$leftover" ]] || return 0   # no matches: glob stayed literal
+        rm -rf -- "$leftover" || \
+            warn "Could not remove leftover backup: $leftover"
+    done
 }
 
-activate_project() {
-    local staging_project="$DIR_STAGING/project"
+discard_previous_backup() {
+    [[ -n "$DIR_BACKUP" && -d "$DIR_BACKUP" ]] || return 0
+    rm -rf -- "$DIR_BACKUP" || \
+        warn "Could not remove the previous project backup: $DIR_BACKUP"
+    DIR_BACKUP=""
+}
 
-    msg "Activating ArchGuard USB Builder..."
-
+backup_current_project() {
     # Preserve the current project until the replacement is validated.
     # Renaming within DIR_BASE does not require sudo.
     if [[ -e "$DIR_PROJECT" ]]; then
@@ -154,6 +169,10 @@ activate_project() {
         mv -- "$DIR_PROJECT" "$DIR_BACKUP" || \
             fatal "Could not move the current project aside."
     fi
+}
+
+promote_staged_project() {
+    local staging_project=$1
 
     # Activate the new project. Restore the previous one if this fails.
     if ! mv -- "$staging_project" "$DIR_PROJECT"; then
@@ -167,15 +186,24 @@ activate_project() {
 
         fatal "Could not activate the downloaded project."
     fi
+}
 
-    # Remove the previous project. It may contain root-owned files.
-    if [[ -n "$DIR_BACKUP" && -d "$DIR_BACKUP" ]]; then
-        sudo rm -rf -- "$DIR_BACKUP" || \
-            warn "Could not remove the previous project backup: $DIR_BACKUP"
-        DIR_BACKUP=""
-    fi
+activate_project() {
+    local staging_project="$DIR_STAGING/project"
+
+    msg "Activating ArchGuard USB Builder..."
+
+    # mv DIR_PROJECT → DIR_BACKUP, sets DIR_BACKUP
+    backup_current_project
+
+    # mv staging → DIR_PROJECT; on failure, restore + fatal
+    promote_staged_project "$staging_project"
+
+    # rm backup + clear DIR_BACKUP
+    discard_previous_backup
 
     # exec in handoff skips the EXIT trap, so remove staging here.
+    [[ -n "$DIR_STAGING" && -d "$DIR_STAGING" ]] || return 0
     rmdir -- "$DIR_STAGING" 2>/dev/null || true
     DIR_STAGING=""
 }
@@ -184,11 +212,21 @@ activate_project() {
 # Handoff
 # ==============================================================================
 
-handoff() {
-    local orchestrator="$DIR_PROJECT/$PATH_ORCHESTRATOR"
+validate_project() {
+    local project_dir=$1
+    local orchestrator="$project_dir/$REL_ORCHESTRATOR"
 
     [[ -f "$orchestrator" ]] || \
-        fatal "USB Builder orchestrator not found: $orchestrator"
+        fatal "Orchestrator launcher not found: $orchestrator"
+    bash -n "$orchestrator" || \
+        fatal "Orchestrator has a Bash syntax error."
+}
+
+handoff() {
+    local orchestrator="$DIR_PROJECT/$REL_ORCHESTRATOR"
+
+    [[ -f "$orchestrator" ]] || \
+        fatal "Orchestrator not found: $orchestrator"
 
     msg "Starting ArchGuard USB Builder..."
     export DIR_PROJECT
@@ -202,13 +240,14 @@ handoff() {
 main() {
     init_variables
 
-    trap 'trap_err "$LINENO"' ERR
+    trap 'trap_err "${BASH_LINENO[0]}"' ERR
     trap cleanup EXIT
     trap 'exit 130' INT
     trap 'exit 143' TERM
 
     check_requirements
-    check_sudo
+    check_internet_connectivity
+    purge_leftover_backups
     download_project
     activate_project
     handoff "$@"
