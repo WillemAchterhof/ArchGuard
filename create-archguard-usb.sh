@@ -4,7 +4,7 @@ set -Eeuo pipefail
 # ==============================================================================
 #  ArchGuard USB Builder Bootstrap
 # ==============================================================================
-# /create_archguard_usb.sh
+# /create-archguard-usb.sh
 
 # ==============================================================================
 # Initialization
@@ -72,12 +72,12 @@ check_internet(){
 # ==============================================================================
 
 project_copy(){
-    local file="$DIR_PROJECT/create_archguard_usb.sh"
+    local file="$DIR_PROJECT/create-archguard-usb.sh"
 
     [[ -f "$file" ]] \
         || fatal "USB creator script not found: $file"
 
-    install -m 0755 "$file" "$DIR_BASE/create_archguard_usb.sh" \
+    install -m 0755 "$file" "$DIR_BASE/create-archguard-usb.sh" \
         || fatal "Failed to copy USB creator script."
 }
 
