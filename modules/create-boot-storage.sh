@@ -1,3 +1,4 @@
+
 #!/usr/bin/env bash
 
 # ==============================================================================
@@ -12,14 +13,22 @@
 readonly AGBOOT_SIZE_MIB=256
 readonly AGBOOT_LABEL="AGBOOT"
 readonly AGBOOT_MOUNT="/run/archguard/agboot"
+
+# Bootstrap entry point expected by secure-boot.sh.
 readonly AGBOOT_INSTALLER="archguard-install.sh"
-readonly AGBOOT_INSTALLER_URL="https://raw.githubusercontent.com/WillemAchterhof/archguard-install/refs/heads/main/archguard_install.sh"
+
+# Local bootstrap source directory.
+readonly AGBOOT_BOOTSTRAP_SOURCE="$DIR_MAIN/bootstrap"
 
 AG_AGBOOT_PART=""
-AGBOOT_DOWNLOAD=""
 
+
+# ==============================================================================
+# Requirements
+# ==============================================================================
 
 check_boot_storage_requirements(){
+
     local command
 
     for command in \
@@ -36,9 +45,11 @@ check_boot_storage_requirements(){
         sync \
         awk \
         cmp \
-        curl \
-        mktemp \
-        rm \
+        cp \
+        diff \
+        chmod \
+        mkdir \
+        rmdir \
         bash
     do
         require_command "$command"
@@ -52,37 +63,54 @@ check_boot_storage_requirements(){
 
     [[ -z "${AG_AGBOOT_PART:-}" ]] \
         || fatal "AGBOOT partition is already assigned: $AG_AGBOOT_PART"
+
+    [[ -d "$AGBOOT_BOOTSTRAP_SOURCE" ]] \
+        || fatal "Bootstrap directory not found: $AGBOOT_BOOTSTRAP_SOURCE"
+
+    [[ -f "$AGBOOT_BOOTSTRAP_SOURCE/$AGBOOT_INSTALLER" ]] \
+        || fatal "Bootstrap entry point not found: $AGBOOT_INSTALLER"
+
+    [[ -d "$AGBOOT_BOOTSTRAP_SOURCE/lib" ]] \
+        || fatal "Bootstrap library directory not found."
+
+    [[ -d "$AGBOOT_BOOTSTRAP_SOURCE/modules" ]] \
+        || fatal "Bootstrap modules directory not found."
+
+    bash -n "$AGBOOT_BOOTSTRAP_SOURCE/$AGBOOT_INSTALLER" \
+        || fatal "Bootstrap entry point has invalid Bash syntax."
 }
 
 
-# Unmount AGBOOT and remove temporary resources.
+# ==============================================================================
+# Cleanup
+# ==============================================================================
+
+# Unmount AGBOOT.
 # Safe to call repeatedly, including from the EXIT trap.
+
 agboot_close_devices(){
+
     if mountpoint -q "$AGBOOT_MOUNT" 2>/dev/null; then
         sudo umount "$AGBOOT_MOUNT" \
             || warn "Failed to unmount AGBOOT: $AGBOOT_MOUNT"
     fi
 
     sudo rmdir "$AGBOOT_MOUNT" 2>/dev/null || true
-
-    if [[ -n "${AGBOOT_DOWNLOAD:-}" ]]; then
-        rm -f -- "$AGBOOT_DOWNLOAD" \
-            || warn "Failed to remove temporary installer download."
-        AGBOOT_DOWNLOAD=""
-    fi
 }
 
 
 agboot_cleanup(){
+
     agboot_close_devices
     cleanup
 }
 
 
 agboot_fatal(){
+
     local message="$1"
 
-    printf '[FATAL] %s\n' "$message"
+    printf '[FATAL] %s\n' "$message" >&2
 
     trap - EXIT
     agboot_cleanup
@@ -91,37 +119,12 @@ agboot_fatal(){
 }
 
 
-download_agboot_installer(){
-    msg "Downloading ArchGuard installer from GitHub..."
-
-    AGBOOT_DOWNLOAD=$(mktemp) \
-        || agboot_fatal "Failed to create temporary download file."
-
-    # Clean up the temporary download if a later command fails unexpectedly.
-    trap 'agboot_close_devices' EXIT
-
-    curl \
-        --fail \
-        --location \
-        --silent \
-        --show-error \
-        --retry 3 \
-        --connect-timeout 10 \
-        --output "$AGBOOT_DOWNLOAD" \
-        "$AGBOOT_INSTALLER_URL" \
-        || agboot_fatal "Failed to download ArchGuard installer."
-
-    [[ -s "$AGBOOT_DOWNLOAD" ]] \
-        || agboot_fatal "Downloaded installer is empty."
-
-    bash -n "$AGBOOT_DOWNLOAD" \
-        || agboot_fatal "Downloaded installer has invalid Bash syntax."
-
-    success "ArchGuard installer downloaded and syntax checked."
-}
-
+# ==============================================================================
+# AGBOOT Partition
+# ==============================================================================
 
 create_agboot_partition(){
+
     local first_free
     local start
 
@@ -175,6 +178,7 @@ create_agboot_partition(){
 
 
 format_agboot_partition(){
+
     [[ -b "${AG_AGBOOT_PART:-}" ]] \
         || agboot_fatal "AGBOOT partition is not available."
 
@@ -192,6 +196,7 @@ format_agboot_partition(){
 
 
 mount_agboot_partition(){
+
     msg "Mounting AGBOOT..."
 
     sudo mkdir -p "$AGBOOT_MOUNT" \
@@ -204,48 +209,75 @@ mount_agboot_partition(){
 }
 
 
-populate_agboot_partition(){
-    msg "Installing ArchGuard installer on AGBOOT..."
+# ==============================================================================
+# Bootstrap Installation
+# ==============================================================================
 
-    sudo install \
-        --owner=0 \
-        --group=0 \
-        --mode=0755 \
-        "$AGBOOT_DOWNLOAD" \
-        "$AGBOOT_MOUNT/$AGBOOT_INSTALLER" \
-        || agboot_fatal "Failed to install ArchGuard installer on AGBOOT."
+copy_bootstrap(){
 
-    success "ArchGuard installer installed."
+    local destination="$AGBOOT_MOUNT"
+
+    msg "Installing ArchGuard bootstrap on AGBOOT..."
+
+    mountpoint -q "$AGBOOT_MOUNT" \
+        || agboot_fatal "AGBOOT is not mounted."
+
+    [[ -d "$AGBOOT_BOOTSTRAP_SOURCE" ]] \
+        || agboot_fatal "Bootstrap source directory is missing."
+
+    # Copy the complete bootstrap contents into the AGBOOT root.
+    # This preserves the directory structure and file permissions.
+    sudo cp -a \
+        "$AGBOOT_BOOTSTRAP_SOURCE/." \
+        "$destination/" \
+        || agboot_fatal "Failed to copy ArchGuard bootstrap."
+
+    # Ensure the Secure Boot entry point is executable.
+    sudo chmod 0755 "$destination/$AGBOOT_INSTALLER" \
+        || agboot_fatal "Failed to set bootstrap entry point permissions."
+
+    success "ArchGuard bootstrap installed."
 }
 
 
 verify_agboot_partition(){
+
     local label
     local installer="$AGBOOT_MOUNT/$AGBOOT_INSTALLER"
 
     msg "Verifying AGBOOT..."
 
-    label=$(lsblk -no LABEL "$AG_AGBOOT_PART" | xargs) \
+    label=$(lsblk -no LABEL "$AG_AGBOOT_PART") \
         || agboot_fatal "Failed to read AGBOOT partition label."
 
     [[ "$label" == "$AGBOOT_LABEL" ]] \
         || agboot_fatal "AGBOOT label verification failed."
 
     [[ -f "$installer" ]] \
-        || agboot_fatal "Installer is missing from AGBOOT."
+        || agboot_fatal "Bootstrap entry point is missing."
 
     [[ -x "$installer" ]] \
-        || agboot_fatal "Installer is not executable."
+        || agboot_fatal "Bootstrap entry point is not executable."
 
-    cmp -s "$AGBOOT_DOWNLOAD" "$installer" \
-        || agboot_fatal "Installer verification failed: files differ."
+    # Compare the complete bootstrap directory.
+    # lost+found is created automatically by ext4.
+    sudo diff -qr \
+        --exclude=lost+found \
+        "$AGBOOT_BOOTSTRAP_SOURCE" \
+        "$AGBOOT_MOUNT" \
+        >/dev/null \
+        || agboot_fatal "Bootstrap verification failed: files differ."
 
-    success "AGBOOT label, permissions, and installer contents verified."
+    success "AGBOOT label, bootstrap files and permissions verified."
 }
 
 
+# ==============================================================================
+# Configuration Files
+# ==============================================================================
 
-copy_configs() {
+copy_configs(){
+
     local source_dir="$DIR_MAIN/configs"
     local destination_dir="$AGBOOT_MOUNT/config-files"
     local file
@@ -264,34 +296,43 @@ copy_configs() {
         || agboot_fatal "Failed to create AGBOOT configuration directory."
 
     for file in "$source_dir"/*; do
-            [[ -f "$file" ]] || continue
 
-            name="${file##*/}"
+        [[ -f "$file" ]] || continue
 
-            sudo install \
-                --owner=0 \
-                --group=0 \
-                --mode=0644 \
-                "$file" \
-                "$destination_dir/$name" \
-                || agboot_fatal "Failed to copy $name to AGBOOT."
+        name="${file##*/}"
 
-            sudo cmp -s "$file" "$destination_dir/$name" \
-                || agboot_fatal "Verification failed for $name on AGBOOT."
+        sudo install \
+            --owner=0 \
+            --group=0 \
+            --mode=0644 \
+            "$file" \
+            "$destination_dir/$name" \
+            || agboot_fatal "Failed to copy $name to AGBOOT."
 
-            copied=$((copied + 1))
-        done
+        sudo cmp -s "$file" "$destination_dir/$name" \
+            || agboot_fatal "Verification failed for $name on AGBOOT."
 
-        (( copied > 0 )) \
-            || warn "No configuration files found in: $source_dir"
+        copied=$((copied + 1))
+    done
+
+    if (( copied == 0 )); then
+        warn "No configuration files found in: $source_dir"
+    fi
 
     success "Configuration files copied to AGBOOT."
 }
 
+
+# ==============================================================================
+# Close AGBOOT
+# ==============================================================================
+
 close_agboot_partition(){
+
     msg "Closing AGBOOT..."
 
     if mountpoint -q "$AGBOOT_MOUNT"; then
+
         sudo sync \
             || agboot_fatal "Failed to flush filesystem changes."
 
@@ -301,11 +342,6 @@ close_agboot_partition(){
 
     sudo rmdir "$AGBOOT_MOUNT" 2>/dev/null || true
 
-    rm -f -- "$AGBOOT_DOWNLOAD" \
-        || agboot_fatal "Failed to remove temporary installer download."
-
-    AGBOOT_DOWNLOAD=""
-
     # Resources were closed successfully; disable the EXIT trap.
     trap - EXIT
 
@@ -313,16 +349,25 @@ close_agboot_partition(){
 }
 
 
+# ==============================================================================
+# Main
+# ==============================================================================
+
 create_boot_storage(){
+
     check_boot_storage_requirements
 
-    download_agboot_installer
+    # Ensure AGBOOT is closed if an unexpected failure occurs.
+    trap 'agboot_close_devices' EXIT
+
     create_agboot_partition
     format_agboot_partition
     mount_agboot_partition
-    populate_agboot_partition
+
+    copy_bootstrap
     verify_agboot_partition
     copy_configs
+
     close_agboot_partition
 
     success "AGBOOT successfully created and verified."
