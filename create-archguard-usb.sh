@@ -14,7 +14,7 @@ set -Eeuo pipefail
 
 init_variables() {
     readonly GIT_URL="https://github.com/WillemAchterhof/archguard-usb-builder.git"
-    readonly GIT_BRANCH="v0.1"
+    readonly GIT_BRANCH="version-one"
     readonly DIR_BASE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
     readonly DIR_PROJECT="$DIR_BASE/archguard-usb-builder"
     
