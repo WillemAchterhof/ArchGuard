@@ -43,7 +43,7 @@ source "$DIR_MODULES/bootstrap-handoff.sh"
 # ==============================================================================
 
 main() {
-    # Bootstrap workflow
+    printf "[Success] The bootstrap ArchGuard Installe loaded succesfully."
 }
 
 main "$@"
