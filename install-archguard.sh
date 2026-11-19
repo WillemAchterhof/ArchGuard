@@ -2,9 +2,9 @@
 set -Eeuo pipefail
 
 # ==============================================================================
-#  ArchGuard USB Builder Bootstrap
+#  ArchGuard Bootstrap
 # ==============================================================================
-# /create-archguard-usb.sh
+# /install-archguard.sh
 #
 # Downloads the selected USB Builder release and starts its orchestrator.
 
@@ -13,10 +13,10 @@ set -Eeuo pipefail
 # ==============================================================================
 
 init_variables() {
-    readonly GIT_URL="https://github.com/WillemAchterhof/archguard-usb-builder.git"
+    readonly GIT_URL="https://github.com/WillemAchterhof/archguard.git"
     readonly GIT_BRANCH="version-one"
     readonly DIR_BASE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-    readonly DIR_PROJECT="$DIR_BASE/archguard-usb-builder"
+    readonly DIR_PROJECT="$DIR_BASE/archguard"
     
     readonly DIR_ORCHESTRATOR="orchestrator"
     readonly FILE_ORCHESTRATOR="orchestrator-launch.sh"
@@ -104,7 +104,7 @@ download_project() {
 
     msg "Downloading ArchGuard USB Builder ($GIT_BRANCH)..."
 
-    DIR_STAGING="$(mktemp -d "$DIR_BASE/.archguard-usb-builder.XXXXXX")" || \
+    DIR_STAGING="$(mktemp -d "$DIR_BASE/.archguard.XXXXXX")" || \
         fatal "Could not create a temporary download directory."
 
     staging_project="$DIR_STAGING/project"
@@ -146,7 +146,7 @@ activate_project() {
     # Preserve the current project until the replacement is validated.
     # Renaming within DIR_BASE does not require sudo.
     if [[ -e "$DIR_PROJECT" ]]; then
-        DIR_BACKUP="$DIR_BASE/.archguard-usb-builder.previous.$$"
+        DIR_BACKUP="$DIR_BASE/.archguard.previous.$$"
 
         [[ ! -e "$DIR_BACKUP" ]] || \
             fatal "Temporary backup path already exists: $DIR_BACKUP"
