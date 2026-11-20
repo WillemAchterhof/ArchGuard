@@ -49,3 +49,10 @@ run_module() {
         return 1
     }
 }
+
+load_module() {
+    local module_name="$1"
+
+    run_module "$module_name"
+    "run_$module_name"
+}
