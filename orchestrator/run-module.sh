@@ -21,7 +21,7 @@
 
 run_module() {
     local module_name="$1"
-    local module_dir="$PROJECT_DIR/modules/module-$module_name"
+    local module_dir="$PROJECT_DIR/modules/$module_name"
     local module_file="$module_dir/launch-$module_name.sh"
 
     [[ -d "$module_dir" ]] || {
