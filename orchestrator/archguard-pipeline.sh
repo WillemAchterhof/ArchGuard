@@ -1,10 +1,21 @@
 #!/usr/bin/env bash
 
 # ==============================================================================
-# ArchGuard Installer — Main Pipeline
+#  ArchGuard Pipeline
 # ==============================================================================
-# orchestrator/archguard-pipeline.sh
+#  orchestrator/archguard-pipeline.sh
+#
+#  Defines the execution sequence of the ArchGuard installer.
+#
+#  Responsibilities:
+#    - Define the execution order of installer modules
+#    - Control progression through the installation stages
+# ==============================================================================
+
+# ==============================================================================
+# Pipeline
+# ==============================================================================
 
 run_pipeline() {
-
+    module_test
 }
