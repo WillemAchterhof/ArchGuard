@@ -51,7 +51,7 @@ source_module() {
     }
 }
 
-run_module() {
+orch_run_module() {
     local module_name="$1"
     local entry="run_$module_name"
 

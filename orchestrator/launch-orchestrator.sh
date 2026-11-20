@@ -26,7 +26,7 @@ readonly ORCHESTRATOR_PATH="$PROJECT_DIR/orchestrator"
 # Preparation
 # ==============================================================================
 
-validate_file() {
+orch_validate_file() {
     local file="$ORCHESTRATOR_PATH/$1"
 
     [[ -f "$file" ]] || {
@@ -45,7 +45,7 @@ validate_file() {
     }
 }
 
-load_file() {
+orch_load_file() {
     local file="$ORCHESTRATOR_PATH/$1"
 
     # shellcheck source=/dev/null
@@ -62,8 +62,8 @@ prepare_environment() {
         "archguard-pipeline.sh"
     )
 
-    for file in "${files[@]}"; do validate_file "$file"; done
-    for file in "${files[@]}"; do load_file "$file"; done
+    for file in "${files[@]}"; do orch_validate_file "$file"; done
+    for file in "${files[@]}"; do orch_load_file "$file"; done
 }
 
 # ==============================================================================
