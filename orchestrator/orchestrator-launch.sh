@@ -1,59 +1,51 @@
+
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
 # ==============================================================================
-# ArchGuard Installer — Main Orchestrator
+# ArchGuard Orchestrator
 # ==============================================================================
-# orchestrator/orchestrator-launch.sh
+# /orchestrator/launch-orchestrator.sh
+#
+# Responsible for launching modules in the required execution order.
+# Modules manage their own dependencies, initialization and cleanup.
+# ==============================================================================
 
 # ==============================================================================
 # Initialization
 # ==============================================================================
 
-readonly AG_DIR_MAIN="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
-readonly AG_DIR_ORCHESTRATOR="$AG_DIR_MAIN/orchestrator"
-
-# ==============================================================================
-# Core
-# ==============================================================================
-
-init_core() {
-    source "$AG_DIR_MAIN/install/lib/core/variables/module.sh" \
-        || { printf '[FATAL] Failed loading core variables.\n' >&2; exit 1; }
-
-    source "$AG_DIR_LOGGING/module.sh" \
-        || { printf '[FATAL] Failed loading logging.\n' >&2; exit 1; }
-
-    source "$AG_DIR_ERRORS/module.sh" \
-        || { printf '[FATAL] Failed loading error handling.\n' >&2; exit 1; }
-
-    init_logging
+init_variables() {
+    readonly DIR_PROJECT="${DIR_PROJECT:?DIR_PROJECT is not set}"
+    readonly DIR_MODULES="$DIR_PROJECT/modules"
 }
 
 # ==============================================================================
-# Orchestrator
+# Module Execution
 # ==============================================================================
 
-init_orchestrator() {
-    source "$AG_DIR_ORCHESTRATOR/run-module.sh" \
-        || fatal "Failed loading module runner."
+run_module() {
+    local module_launcher=$1
+    local launcher_path="$DIR_PROJECT/$module_launcher"
 
-    source "$AG_DIR_ORCHESTRATOR/pipeline.sh" \
-        || fatal "Failed loading installation pipeline."
+    [[ -f "$launcher_path" ]] ||
+        {
+            printf '[FATAL] Module launcher not found: %s\n' \
+                "$launcher_path" >&2
+            return 1
+        }
+
+    bash "$launcher_path"
 }
 
 # ==============================================================================
-# Main
+# Pipeline
 # ==============================================================================
 
 main() {
-    init_core
+    init_variables
 
-    trap 'trap_err "$LINENO"' ERR
-
-    init_orchestrator
-
-    run_pipeline "$@"
+    run_module "modules/storage/launch-select-storage.sh"
 }
 
 main "$@"
