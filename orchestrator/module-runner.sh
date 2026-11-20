@@ -60,7 +60,7 @@ run_module() {
         return 1
     fi
 
-    source_module "$module_name"
+    source_module "$module_name" || return 1
 
     declare -F "$entry" >/dev/null || {
         printf '[FATAL] Module entry function missing: %s\n' "$entry" >&2
