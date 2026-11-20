@@ -3,7 +3,7 @@
 # ==============================================================================
 #  ArchGuard Module Runner
 # ==============================================================================
-#  orchestrator/launch-module.sh
+#  orchestrator/module-runner.sh
 #
 #  Loads an individual ArchGuard module.
 #
@@ -54,6 +54,11 @@ source_module() {
 run_module() {
     local module_name="$1"
     local entry="run_$module_name"
+
+    if declare -F "$entry" >/dev/null; then
+        printf '[FATAL] Module entry name already in use: %s\n' "$entry" >&2
+        return 1
+    fi
 
     source_module "$module_name"
 
