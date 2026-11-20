@@ -1,51 +1,74 @@
-
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
 # ==============================================================================
-# ArchGuard Orchestrator
+#  ArchGuard Orchestrator
 # ==============================================================================
-# /orchestrator/launch-orchestrator.sh
+#  orchestrator/launch-orchestrator.sh
 #
-# Responsible for launching modules in the required execution order.
-# Modules manage their own dependencies, initialization and cleanup.
+#  Prepares and validates the ArchGuard execution environment.
+#
+#  Responsibilities:
+#    - Load essential variables for environment validation
+#    - Verify orchestrator components
+#    - Load orchestrator components
+#    - Start the ArchGuard pipeline
 # ==============================================================================
 
 # ==============================================================================
 # Initialization
 # ==============================================================================
 
-init_variables() {
-    readonly DIR_PROJECT="${DIR_PROJECT:?DIR_PROJECT is not set}"
-    readonly DIR_MODULES="$DIR_PROJECT/modules"
+readonly DIR_PROJECT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly DIR_ORCHESTRATOR="$DIR_PROJECT/orchestrator"
+
+# ==============================================================================
+# Validation
+# ==============================================================================
+
+validate_file() {
+    local file="$1"
+
+    [[ -f "$file" ]] || {
+        printf '[FATAL] Required file missing: %s\n' "$file" >&2
+        return 1
+    }
+
+    [[ -r "$file" ]] || {
+        printf '[FATAL] Required file is not readable: %s\n' "$file" >&2
+        return 1
+    }
+
+    bash -n "$file" || {
+        printf '[FATAL] Invalid Bash syntax: %s\n' "$file" >&2
+        return 1
+    }
+}
+
+validate_environment() {
+    validate_file "$DIR_ORCHESTRATOR/run-module.sh"
+    validate_file "$DIR_ORCHESTRATOR/archguard-modules.sh"
+    validate_file "$DIR_ORCHESTRATOR/archguard-pipeline.sh"
 }
 
 # ==============================================================================
-# Module Execution
+# Load Orchestrator
 # ==============================================================================
 
-run_module() {
-    local module_launcher=$1
-    local launcher_path="$DIR_PROJECT/$module_launcher"
-
-    [[ -f "$launcher_path" ]] ||
-        {
-            printf '[FATAL] Module launcher not found: %s\n' \
-                "$launcher_path" >&2
-            return 1
-        }
-
-    bash "$launcher_path"
+load_orchestrator() {
+    source "$DIR_ORCHESTRATOR/run-module.sh"
+    source "$DIR_ORCHESTRATOR/archguard-modules.sh"
+    source "$DIR_ORCHESTRATOR/archguard-pipeline.sh"
 }
 
 # ==============================================================================
-# Pipeline
+# Main
 # ==============================================================================
 
 main() {
-    init_variables
-
-    run_module "modules/storage/launch-select-storage.sh"
+    validate_environment
+    load_orchestrator
+    run_pipeline "$@"
 }
 
 main "$@"
