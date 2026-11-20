@@ -47,7 +47,7 @@ validate_file() {
 
 validate_environment() {
     validate_file "$ORCHESTRATOR_PATH/run-module.sh"
-    validate_file "$ORCHESTRATOR_PATH/archguard-modules.sh"
+    validate_file "$ORCHESTRATOR_PATH/load-modules.sh"
     validate_file "$ORCHESTRATOR_PATH/archguard-pipeline.sh"
 }
 
@@ -67,7 +67,7 @@ load_file() {
 
 load_orchestrator() {
     load_file "run-module.sh"
-    load_file "archguard-modules.sh"
+    load_file "load-modules.sh"
     load_file "archguard-pipeline.sh"
 }
 
