@@ -5,18 +5,16 @@
 # ==============================================================================
 #  orchestrator/archguard-modules.sh
 #
-#  Defines the entry points for ArchGuard modules.
-#
-#  Responsibilities:
-#    - Load individual modules through run_module
-#    - Call the corresponding module entry functions
+#  Provides the entry point for loading and executing ArchGuard modules.
 # ==============================================================================
 
 # ==============================================================================
-# Module Entry Points
+# Module Loader
 # ==============================================================================
 
-module_test() {
-    run_module "test"
-    run_test
+load_module() {
+    local module_name="$1"
+
+    run_module "$module_name"
+    "run_$module_name"
 }
