@@ -91,8 +91,8 @@ remove_staging() {
 cleanup() {
     local exit_code=$?
 
-    restore_previous_project
-    remove_staging
+    restore_previous_project || true
+    remove_staging || warn "Could not remove staging directory: $DIR_STAGING"
 
     return "$exit_code"
 }
@@ -104,12 +104,12 @@ cleanup() {
 check_requirements() {
     local required_command
 
-    for required_command in git; do
-        command -v "$required_command" >/dev/null 2>&1 || \
+    for required_command in git bash; do
+        command -v "$required_command" >/dev/null 2>&1 ||
             fatal "Required command not found: $required_command"
     done
 
-    [[ -w "$DIR_BASE" ]] || \
+    [[ -w "$DIR_BASE" ]] ||
         fatal "Project directory is not writable: $DIR_BASE"
 }
 
