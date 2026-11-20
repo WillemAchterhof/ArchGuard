@@ -9,7 +9,6 @@ set -Eeuo pipefail
 #  Prepares and validates the ArchGuard execution environment.
 #
 #  Responsibilities:
-#    - Load essential variables for environment validation
 #    - Verify orchestrator components
 #    - Load orchestrator components
 #    - Start the ArchGuard pipeline
@@ -19,10 +18,9 @@ set -Eeuo pipefail
 # Initialization
 # ==============================================================================
 
-REL_DIR_PROJECT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
-
-readonly DIR_PROJECT
-readonly DIR_ORCHESTRATOR="$DIR_PROJECT/orchestrator"
+PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+readonly PROJECT_DIR
+readonly ORCHESTRATOR_PATH="$PROJECT_DIR/orchestrator"
 
 # ==============================================================================
 # Validation
@@ -47,10 +45,29 @@ validate_file() {
     }
 }
 
+validate_directory() {
+    local dir="$1"
+    local file
+
+    [[ -d "$dir" ]] || {
+        printf '[FATAL] Required directory missing: %s\n' "$dir" >&2
+        return 1
+    }
+
+    for file in "$dir"/*.sh; do
+        [[ -e "$file" ]] || return 0   # no matches: glob stayed literal
+        validate_file "$file"
+    done
+}
+
 validate_environment() {
-    validate_file "$DIR_ORCHESTRATOR/run-module.sh"
-    validate_file "$DIR_ORCHESTRATOR/archguard-modules.sh"
-    validate_file "$DIR_ORCHESTRATOR/archguard-pipeline.sh"
+    validate_file "$ORCHESTRATOR_PATH/run-module.sh"
+    validate_file "$ORCHESTRATOR_PATH/archguard-modules.sh"
+    validate_file "$ORCHESTRATOR_PATH/archguard-pipeline.sh"
+
+    # Point this at your modules folder(s) so a syntax error is caught
+    # before the pipeline starts, not when a module is sourced:
+    # validate_directory "$PROJECT_DIR/modules"
 }
 
 # ==============================================================================
