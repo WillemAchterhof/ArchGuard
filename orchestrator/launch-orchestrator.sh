@@ -9,7 +9,6 @@ set -Eeuo pipefail
 #  Prepares and validates the ArchGuard execution environment.
 #
 #  Responsibilities:
-#    - Load essential variables for environment validation
 #    - Verify orchestrator components
 #    - Load orchestrator components
 #    - Start the ArchGuard pipeline
@@ -19,8 +18,9 @@ set -Eeuo pipefail
 # Initialization
 # ==============================================================================
 
-readonly DIR_PROJECT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-readonly DIR_ORCHESTRATOR="$DIR_PROJECT/orchestrator"
+PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+readonly PROJECT_DIR
+readonly ORCHESTRATOR_PATH="$PROJECT_DIR/orchestrator"
 
 # ==============================================================================
 # Validation
@@ -46,9 +46,9 @@ validate_file() {
 }
 
 validate_environment() {
-    validate_file "$DIR_ORCHESTRATOR/run-module.sh"
-    validate_file "$DIR_ORCHESTRATOR/archguard-modules.sh"
-    validate_file "$DIR_ORCHESTRATOR/archguard-pipeline.sh"
+    validate_file "$ORCHESTRATOR_PATH/run-module.sh"
+    validate_file "$ORCHESTRATOR_PATH/archguard-modules.sh"
+    validate_file "$ORCHESTRATOR_PATH/archguard-pipeline.sh"
 }
 
 # ==============================================================================
@@ -56,9 +56,12 @@ validate_environment() {
 # ==============================================================================
 
 load_orchestrator() {
-    source "$DIR_ORCHESTRATOR/run-module.sh"
-    source "$DIR_ORCHESTRATOR/archguard-modules.sh"
-    source "$DIR_ORCHESTRATOR/archguard-pipeline.sh"
+    # shellcheck source=/dev/null
+    source "$ORCHESTRATOR_PATH/run-module.sh"
+    # shellcheck source=/dev/null
+    source "$ORCHESTRATOR_PATH/archguard-modules.sh"
+    # shellcheck source=/dev/null
+    source "$ORCHESTRATOR_PATH/archguard-pipeline.sh"
 }
 
 # ==============================================================================
