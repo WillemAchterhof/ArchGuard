@@ -229,7 +229,7 @@ handoff() {
         fatal "Orchestrator not found: $orchestrator"
 
     msg "Starting ArchGuard..."
-    export DIR_PROJECT
+
     exec bash "$orchestrator" "$@"
 }
 
