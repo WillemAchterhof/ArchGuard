@@ -18,4 +18,5 @@
 
 run_pipeline() {
     run_module "test"
+    run_module "broken"
 }
