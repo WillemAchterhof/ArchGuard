@@ -3,7 +3,7 @@
 # ==============================================================================
 # ArchGuard Installer — Main Pipeline
 # ==============================================================================
-# orchestrator/pipeline.sh
+# orchestrator/archguard-pipeline.sh
 
 run_pipeline() {
 
