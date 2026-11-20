@@ -58,7 +58,7 @@ load_file() {
 prepare_environment() {
     local file
     local -a files=(
-        "launch-module.sh"
+        "module-runner.sh"
         "archguard-pipeline.sh"
     )
 
