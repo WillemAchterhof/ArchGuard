@@ -55,7 +55,12 @@ run_module() {
     local module_name="$1"
     local entry="run_$module_name"
 
-    declare -F "$entry" >/dev/null || source_module "$module_name"
+    if declare -F "$entry" >/dev/null; then
+        printf '[FATAL] Module entry name already in use: %s\n' "$entry" >&2
+        return 1
+    fi
+
+    source_module "$module_name"
 
     declare -F "$entry" >/dev/null || {
         printf '[FATAL] Module entry function missing: %s\n' "$entry" >&2
