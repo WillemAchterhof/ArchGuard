@@ -3,7 +3,7 @@
 # ==============================================================================
 #  ArchGuard Module Runner
 # ==============================================================================
-#  orchestrator/run-module.sh
+#  orchestrator/launch-module.sh
 #
 #  Loads an individual ArchGuard module.
 #
@@ -12,13 +12,14 @@
 #    - Verify its launcher exists and is readable
 #    - Validate its Bash syntax
 #    - Source the module launcher
+#    - Run the module launcher
 # ==============================================================================
 
 # ==============================================================================
 # Module Loader
 # ==============================================================================
 
-run_module() {
+source_module() {
     local module_name="$1"
     local module_dir="$PROJECT_DIR/modules/$module_name"
     local module_file="$module_dir/launch-$module_name.sh"
@@ -50,9 +51,16 @@ run_module() {
     }
 }
 
-load_module() {
+run_module() {
     local module_name="$1"
+    local entry="run_$module_name"
 
-    run_module "$module_name"
-    "run_$module_name"
+    source_module "$module_name"
+
+    declare -F "$entry" >/dev/null || {
+        printf '[FATAL] Module entry function missing: %s\n' "$entry" >&2
+        return 1
+    }
+
+    "$entry"
 }
