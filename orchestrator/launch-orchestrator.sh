@@ -56,11 +56,6 @@ load_file() {
     }
 }
 
-source_file() {
-    validate_file "$1"
-    load_file "$1"
-}
-
 prepare_environment() {
     local file
     local -a files=(
