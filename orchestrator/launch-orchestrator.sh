@@ -62,9 +62,15 @@ source_file() {
 }
 
 prepare_environment() {
-    source_file "run-module.sh"
-    source_file "load-modules.sh"
-    source_file "archguard-pipeline.sh"
+    local file
+    local -a files=(
+        "run-module.sh"
+        "load-modules.sh"
+        "archguard-pipeline.sh"
+    )
+
+    for file in "${files[@]}"; do validate_file "$file"; done
+    for file in "${files[@]}"; do load_file "$file"; done
 }
 
 # ==============================================================================
