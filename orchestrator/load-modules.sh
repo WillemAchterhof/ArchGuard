@@ -3,7 +3,7 @@
 # ==============================================================================
 #  ArchGuard Modules
 # ==============================================================================
-#  orchestrator/archguard-modules.sh
+#  orchestrator/load-modules.sh
 #
 #  Provides the entry point for loading and executing ArchGuard modules.
 # ==============================================================================
