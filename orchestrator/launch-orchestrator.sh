@@ -1,3 +1,4 @@
+
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
@@ -23,11 +24,11 @@ readonly PROJECT_DIR
 readonly ORCHESTRATOR_PATH="$PROJECT_DIR/orchestrator"
 
 # ==============================================================================
-# Validation
+# Preparation
 # ==============================================================================
 
 validate_file() {
-    local file="$1"
+    local file="$ORCHESTRATOR_PATH/$1"
 
     [[ -f "$file" ]] || {
         printf '[FATAL] Required file missing: %s\n' "$file" >&2
@@ -45,30 +46,25 @@ validate_file() {
     }
 }
 
-validate_environment() {
-    validate_file "$ORCHESTRATOR_PATH/run-module.sh"
-    validate_file "$ORCHESTRATOR_PATH/load-modules.sh"
-    validate_file "$ORCHESTRATOR_PATH/archguard-pipeline.sh"
-}
-
-# ==============================================================================
-# Load Orchestrator
-# ==============================================================================
-
 load_file() {
-    local file="$1"
+    local file="$ORCHESTRATOR_PATH/$1"
 
     # shellcheck source=/dev/null
-    source "$ORCHESTRATOR_PATH/$file" || {
-        printf '[FATAL] Failed loading %s\n' "$file" >&2
+    source "$file" || {
+        printf '[FATAL] Failed loading: %s\n' "$file" >&2
         return 1
     }
 }
 
-load_orchestrator() {
-    load_file "run-module.sh"
-    load_file "load-modules.sh"
-    load_file "archguard-pipeline.sh"
+source_file() {
+    validate_file "$1"
+    load_file "$1"
+}
+
+prepare_environment() {
+    source_file "run-module.sh"
+    source_file "load-modules.sh"
+    source_file "archguard-pipeline.sh"
 }
 
 # ==============================================================================
@@ -76,8 +72,7 @@ load_orchestrator() {
 # ==============================================================================
 
 main() {
-    validate_environment
-    load_orchestrator
+    prepare_environment
     run_pipeline "$@"
 }
 
