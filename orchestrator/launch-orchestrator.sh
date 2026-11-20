@@ -45,29 +45,10 @@ validate_file() {
     }
 }
 
-validate_directory() {
-    local dir="$1"
-    local file
-
-    [[ -d "$dir" ]] || {
-        printf '[FATAL] Required directory missing: %s\n' "$dir" >&2
-        return 1
-    }
-
-    for file in "$dir"/*.sh; do
-        [[ -e "$file" ]] || return 0   # no matches: glob stayed literal
-        validate_file "$file"
-    done
-}
-
 validate_environment() {
     validate_file "$ORCHESTRATOR_PATH/run-module.sh"
     validate_file "$ORCHESTRATOR_PATH/archguard-modules.sh"
     validate_file "$ORCHESTRATOR_PATH/archguard-pipeline.sh"
-
-    # Point this at your modules folder(s) so a syntax error is caught
-    # before the pipeline starts, not when a module is sourced:
-    # validate_directory "$PROJECT_DIR/modules"
 }
 
 # ==============================================================================
