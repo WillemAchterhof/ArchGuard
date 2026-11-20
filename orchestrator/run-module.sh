@@ -1,25 +1,52 @@
+
 #!/usr/bin/env bash
 
 # ==============================================================================
-# ArchGuard Installer — Module Runner
+#  ArchGuard Module Runner
 # ==============================================================================
-# orchestrator/run-module.sh
+#  orchestrator/run-module.sh
+#
+#  Loads an individual ArchGuard module.
+#
+#  Responsibilities:
+#    - Locate the requested module
+#    - Verify its launcher exists and is readable
+#    - Validate its Bash syntax
+#    - Source the module launcher
+# ==============================================================================
+
+# ==============================================================================
+# Module Loader
+# ==============================================================================
 
 run_module() {
-    local module_launcher="$1"
-    local module_name
+    local module_name="$1"
+    local module_dir="$PROJECT_DIR/modules/module-$module_name"
+    local module_file="$module_dir/launch-$module_name.sh"
 
-    [[ -f "$module_launcher" ]] \
-        || fatal "Module launcher not found: $module_launcher"
+    [[ -d "$module_dir" ]] || {
+        printf '[FATAL] Module directory missing: %s\n' "$module_dir" >&2
+        return 1
+    }
 
-    module_name="$(basename "$(dirname "$module_launcher")")"
+    [[ -f "$module_file" ]] || {
+        printf '[FATAL] Module launcher missing: %s\n' "$module_file" >&2
+        return 1
+    }
 
-    log_header "MODULE START: $module_name"
+    [[ -r "$module_file" ]] || {
+        printf '[FATAL] Module launcher not readable: %s\n' "$module_file" >&2
+        return 1
+    }
 
-    AG_CURRENT_MODULE="$module_name"
-    export AG_CURRENT_MODULE
+    bash -n "$module_file" || {
+        printf '[FATAL] Invalid Bash syntax: %s\n' "$module_file" >&2
+        return 1
+    }
 
-    source "$module_launcher"
-
-    log_header "MODULE COMPLETE: $module_name"
+    # shellcheck source=/dev/null
+    source "$module_file" || {
+        printf '[FATAL] Failed loading module: %s\n' "$module_name" >&2
+        return 1
+    }
 }
