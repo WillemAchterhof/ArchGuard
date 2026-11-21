@@ -17,7 +17,6 @@
 # ==============================================================================
 
 readonly PIPELINE_MODULES=(
-    "test"
     # ... install sequence grows here
 )
 

@@ -1,3 +1,18 @@
+#!/usr/bin/env bash
+
+# ==============================================================================
+#  ArchGuard Error Handling
+# ==============================================================================
+#  lib/initialize-errorhandling.sh
+#
+#  ERR trap handler — reports the failing command, file, and module.
+#
+#  Constraints:
+#    - Defines trap_err; does NOT install it. The entry point installs traps.
+#    - AG_CURRENT_MODULE protocol: run_pipeline sets it before each module
+#      invocation and clears it after, so error reports name the module.
+# ==============================================================================
+
 trap_err() {
     trap - ERR
 
@@ -21,8 +36,8 @@ trap_err() {
     local message="[FATAL] Error
     Module  : ${module}
     File    : ${file##*/}:${line}
-    Command : ${error_type:-${failing_command}}
     Caller  : ${caller_func} - ${caller_file##*/}:${call_line}
+    Command : ${error_type:-${failing_command}}
     Exit    : ${exit_code}"
 
     { printf '%s\n' "$message" >> "$LOG_FILE"; } 2>/dev/null || true
