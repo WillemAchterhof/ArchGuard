@@ -1,0 +1,12 @@
+[*] Libraries loaded.
+[*] Initialized Error Handling.
+[+] sourced: /home/willem/Projecs/ArchGuard/orchestrator/module-runner.sh
+[+] sourced: /home/willem/Projecs/ArchGuard/orchestrator/archguard-pipeline.sh
+[*] Orchestrator ready.
+[*] Running module: test
+[*] Hello from the test module :)
+[FATAL] Error
+    Module  : test
+    File    : launch-test.sh: 15:41
+    Command : 'succes' not found
+    Exit    : 127

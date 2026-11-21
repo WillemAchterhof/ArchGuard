@@ -16,25 +16,33 @@
 # Pipeline
 # ==============================================================================
 
-readonly ORCH_PIPELINE_MODULES=(
-    "core"
+readonly PIPELINE_MODULES=(
+    "test"
     # ... install sequence grows here
 )
 
-orch_prepare_pipeline() {
+prepare_module() {
     local module_name
-    for module_name in "${ORCH_PIPELINE_MODULES[@]}"; do
-        orch_source_module "$module_name"
+    
+    for module_name in "${PIPELINE_MODULES[@]}"; do
+        AG_CURRENT_MODULE="$module_name"
+        source_module "$module_name"
+
         declare -F "run_${module_name}" >/dev/null ||
-            printf '[FATAL] Module entry function missing: run_%s\n' "$module_name" >&2
-            return 1
+            fatal "Module entry function missing: run_${module_name}"
+    done
+}
+
+run_module() {
+    local module_name
+
+    for module_name in "${PIPELINE_MODULES[@]}"; do
+        msg "Running module: $module_name"
+        "run_${module_name}"
     done
 }
 
 run_pipeline() {
-    local module_name
-    for module_name in "${ORCH_PIPELINE_MODULES[@]}"; do
-        msg "Running module: $module_name"
-        "run_${module_name}"
-    done
+    prepare_module
+    run_module
 }
