@@ -20,12 +20,12 @@ _log_emit() {
     { printf '%s\n' "$message" >> "$LOG_FILE"; } 2>/dev/null || true
 }
 
-msg()     { _log_emit 1 "[*] $1"; }
-success() { _log_emit 1 "[+] $1"; }
-warn()    { _log_emit 2 "[!] $1"; }
+msg()     { _log_emit 1 "[*] $*"; }
+success() { _log_emit 1 "[+] $*"; }
+warn()    { _log_emit 2 "[!] $*"; }
 log_only() { { printf '%s\n' "$1" >> "$LOG_FILE"; } 2>/dev/null || true; }
 
 fatal() {
-    _log_emit 2 "[FATAL] $1"
+    _log_emit 2 "[FATAL] $*"
     exit 1
 }

@@ -21,6 +21,8 @@
 
 NAME_check() {
     msg "Checking <something>..."
+
+    # Return 1 if the check fails.
 }
 
 # ==============================================================================

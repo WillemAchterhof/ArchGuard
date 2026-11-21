@@ -28,12 +28,14 @@ readonly ORCHESTRATOR_PATH="$PROJECT_DIR/orchestrator"
 # Load Libraries
 # ==============================================================================
 
-[[ -r "$LIB_DIR/launch-initialize.sh" ]] || {
+[[ -f "$LIB_DIR/launch-initialize.sh" &&
+   -r "$LIB_DIR/launch-initialize.sh" ]] || {
     printf '[FATAL] Library missing or unreadable: %s\n' \
         "$LIB_DIR/launch-initialize.sh" >&2
     exit 1
 }
 
+# shellcheck source=lib/launch-initialize.sh
 source "$LIB_DIR/launch-initialize.sh"
 
 # ==============================================================================
@@ -48,32 +50,12 @@ install_traps() {
     msg "Initialized Error Handling."
 }
 
-orch_validate_file() {
-    local file="$ORCHESTRATOR_PATH/$1"
-
-    [[ -f "$file" ]] || fatal "Required file missing: $file"
-    [[ -r "$file" ]] || fatal "Required file is not readable: $file"
-    bash -n "$file" || fatal "Invalid Bash syntax: $file"
-}
-
-orch_load_file() {
-    local file="$ORCHESTRATOR_PATH/$1"
-
-    # shellcheck source=/dev/null
-    source "$file" || fatal "Failed loading: $file"
-
-    success "sourced: $file"
-}
-
 orch_load_components() {
-    local file
-    local -a files=(
-        "module-runner.sh"
+    lib_load_files "$ORCHESTRATOR_PATH" \
+        "module-loader.sh" \
         "archguard-pipeline.sh"
-    )
 
-    for file in "${files[@]}"; do orch_validate_file "$file"; done
-    for file in "${files[@]}"; do orch_load_file "$file"; done
+    success "Orchestrator components loaded."
 }
 
 # ==============================================================================
@@ -86,8 +68,9 @@ main() {
 
     install_traps
     orch_load_components
+
     msg "Orchestrator ready."
-    run_pipeline "$@"
+    run_pipeline
 }
 
-main "$@"
+main

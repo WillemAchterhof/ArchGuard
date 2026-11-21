@@ -9,8 +9,10 @@
 #
 #  Constraints:
 #    - Defines trap_err; does NOT install it. The entry point installs traps.
-#    - AG_CURRENT_MODULE protocol: run_pipeline sets it before each module
-#      invocation and clears it after, so error reports name the module.
+#    - AG_CURRENT_MODULE protocol: load_pipeline_modules and
+#      run_pipeline_modules each set it before processing a module and clear
+#      it after their loop, so error reports name the current module during
+#      both the load and the run phase.
 # ==============================================================================
 
 trap_err() {

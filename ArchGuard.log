@@ -1,0 +1,9 @@
+[*] Libraries loaded.
+[*] Initialized Error Handling.
+[+] Orchestrator components loaded.
+[*] Orchestrator ready.
+[+] Sourced: /home/willem/Projecs/ArchGuard/modules/test/launch-test.sh
+[*] Running module: test
+[*] Hello from the test module :)
+[+] Test module executed successfully.
+[+] Finished module: test
