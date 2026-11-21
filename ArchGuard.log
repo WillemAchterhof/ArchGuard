@@ -1,6 +1,0 @@
-[*] Libraries loaded.
-[*] Initialized Error Handling.
-[+] sourced: /home/willem/Projecs/ArchGuard/orchestrator/module-runner.sh
-[+] sourced: /home/willem/Projecs/ArchGuard/orchestrator/archguard-pipeline.sh
-[*] Orchestrator ready.
-[FATAL] Module directory missing: /home/willem/Projecs/ArchGuard/modules/test
