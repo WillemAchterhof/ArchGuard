@@ -28,7 +28,12 @@ readonly ORCHESTRATOR_PATH="$PROJECT_DIR/orchestrator"
 # Load Libraries
 # ==============================================================================
 
-# shellcheck source=/dev/null
+[[ -r "$LIB_DIR/launch-initialize.sh" ]] || {
+    printf '[FATAL] Library missing or unreadable: %s\n' \
+        "$LIB_DIR/launch-initialize.sh" >&2
+    exit 1
+}
+
 source "$LIB_DIR/launch-initialize.sh"
 
 # ==============================================================================
@@ -36,7 +41,7 @@ source "$LIB_DIR/launch-initialize.sh"
 # ==============================================================================
 
 install_traps() {
-    trap 'trap_err "${BASH_LINENO[0]}"' ERR
+    trap 'trap_err "$?" "$BASH_COMMAND" "$LINENO" "${BASH_LINENO[0]}"' ERR
     trap 'exit 130' INT
     trap 'exit 143' TERM
 
@@ -60,7 +65,7 @@ orch_load_file() {
     success "sourced: $file"
 }
 
-orch_prepare_environment() {
+orch_load_components() {
     local file
     local -a files=(
         "module-runner.sh"
@@ -76,11 +81,11 @@ orch_prepare_environment() {
 # ==============================================================================
 
 main() {
-    run_initialization
+    init_libraries
     msg "Libraries loaded."
 
     install_traps
-    orch_prepare_environment
+    orch_load_components
     msg "Orchestrator ready."
     run_pipeline "$@"
 }

@@ -21,28 +21,32 @@ readonly PIPELINE_MODULES=(
     # ... install sequence grows here
 )
 
-prepare_module() {
+load_pipeline_modules() {
     local module_name
     
     for module_name in "${PIPELINE_MODULES[@]}"; do
-        AG_CURRENT_MODULE="$module_name"
-        source_module "$module_name"
+        load_module "$module_name"
 
         declare -F "run_${module_name}" >/dev/null ||
             fatal "Module entry function missing: run_${module_name}"
     done
 }
 
-run_module() {
+run_pipeline_modules() {
     local module_name
 
     for module_name in "${PIPELINE_MODULES[@]}"; do
+        AG_CURRENT_MODULE="$module_name"
+
         msg "Running module: $module_name"
         "run_${module_name}"
+        success "Finished module: $module_name"
     done
+
+    unset AG_CURRENT_MODULE
 }
 
 run_pipeline() {
-    prepare_module
-    run_module
+    load_pipeline_modules
+    run_pipeline_modules
 }

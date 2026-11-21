@@ -12,5 +12,5 @@
 run_test() {
     msg "Hello from the test module :)"
 
-    succes "Test module executed successfully."
+    success "Test module executed successfully."
 }

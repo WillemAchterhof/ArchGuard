@@ -19,7 +19,7 @@
 # Module Loader
 # ==============================================================================
 
-source_module() {
+load_module() {
     local module_name="$1"
     local module_dir="$PROJECT_DIR/modules/$module_name"
     local module_file="$module_dir/launch-$module_name.sh"
@@ -48,30 +48,24 @@ source_module() {
     source "$module_file" || {
          fatal "Failed loading module: $module_name" 
         return 1
-
-    succes "sourced: $module_file"
     }
+
+    success "sourced: $module_file"
 }
 
-orch_run_module() {
-    msg "Starting $module_name"
-
+run_module() {
     local module_name="$1"
     local entry="run_$module_name"
 
-    if declare -F "$entry" >/dev/null; then
-         fatal "Module entry name already in use: $entry" 
-        return 1
-    fi
+    declare -F "$entry" >/dev/null &&
+        fatal "Module entry name already in use: $entry"
 
-    source_module "$module_name" || return 1
+    load_module "$module_name"
 
-    declare -F "$entry" >/dev/null || {
-         fatal "Module entry function missing: $entry" 
-        return 1
-    }
+    declare -F "$entry" >/dev/null ||
+        fatal "Module entry function missing: $entry"
 
+    msg "Starting $module_name"
     "$entry"
-
-    success "module: $entry"
+    success "Finished $module_name"
 }

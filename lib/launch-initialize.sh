@@ -54,11 +54,14 @@ init_load_file() {
 # Main
 # ==============================================================================
 
-run_initialization() {
+init_libraries() {
     LOG_FILE="$PROJECT_DIR/ArchGuard.log"
     readonly LOG_FILE
-    
-    : > "$LOG_FILE"
+
+    : > "$LOG_FILE" || {
+        printf '[FATAL] Cannot create log file: %s\n' "$LOG_FILE" >&2
+        return 1
+    }
 
     local file
     local -a files=(
